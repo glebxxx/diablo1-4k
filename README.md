@@ -76,6 +76,13 @@ For Russian text set `[Language] Code=ru` in `diablo.ini`. For Russian voices, a
 - `MODIFICATIONS.md` — list of changes made in this fork.
 - `CLAUDE.md` / `AGENTS.md` — rules for AI coding agents working on this repo.
 
+## Спасибо / Thanks
+
+- **[DevilutionX](https://github.com/diasurgical/DevilutionX)** (diasurgical team and contributors): the open-source engine this whole project stands on.
+- **[Topaz Labs](https://www.topazlabs.com)** ([@TopazLabs](https://github.com/TopazLabs)): *Topaz Photo AI* and *Topaz Video AI* power our local AI-upscaling experiments for HD textures. Everything is processed on the player's own machine from their own game files.
+- **Stream** (the "Дьябло: Пламя ада" localization team): the Russian voice-over shipped by DevilutionX as the optional `ru.mpq`.
+- **DevilutionX translators**: the Russian UI translation and the Cyrillic fonts.
+
 ## Credits, license, disclaimer
 
 - Engine: **DevilutionX** by the diasurgical team and contributors. This fork is based on their work.
