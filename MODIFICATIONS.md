@@ -34,3 +34,10 @@ Every user-visible change made in this fork is listed below.
   - New key action *Toggle run in dungeons*, bound to **J** by default (rebind it in *Settings → Keyboard*). It shows "Running in dungeons enabled/disabled".
   - Single player only: the option has no effect in multiplayer games (every client simulates every player's walk speed) or while a demo is recorded or played back. Town behaviour, the save format and demo determinism are unchanged. Walking sounds are muted while running, as upstream does in town.
   - Russian strings added to `Translations/ru.po`. Covered by `test/player_test.cpp` (`IsRunningEnabledOnCurrentLevel`).
+
+### Tools outside the engine
+
+- **`tools/assets/` — graphics codecs and HD texture pack tools** (issue [#3](https://github.com/glebxxx/diablo1-4k/issues/3)). A new Python package, written for this fork; it contains no upstream code and no game data, and the engine is unchanged.
+  - Reads and writes MPQ, PAL, TRN, CEL, CL2, CLX, level CEL/MIN/TIL and PCX. Quantizes upscaled images back to the palette, by nearest colour or per light ramp.
+  - Defines the HD texture pack format (`tools/assets/HDPACK.md`) and ships a validator (`d1-hdpack`).
+  - CI: `.github/workflows/tools-assets.yml` runs ruff and pytest.

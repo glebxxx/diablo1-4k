@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "d1assets"
+version = "0.1.0"
+description = "Diablo 1 graphics codecs (MPQ, PAL, TRN, CEL, CL2, CLX, MIN/TIL, PCX), palette quantizer and HD texture pack tools"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Sustainable Use License (see LICENSE.md in the repository root)" }
+dependencies = ["numpy>=1.23", "Pillow>=9.1"]
+
+[project.optional-dependencies]
+test = ["pytest>=7", "hypothesis>=6.70"]
+dev = ["pytest>=7", "hypothesis>=6.70", "ruff>=0.16,<0.17", "mypy>=1.8"]
+
+[project.scripts]
+d1assets = "d1assets.cli:main"
+d1-hdpack = "d1assets.hdpack.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+d1assets = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["B905"]  # zip(strict=...) adds noise here; lengths are checked explicitly
+
+[tool.mypy]
+python_version = "3.10"
+files = ["src"]
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = ["PIL", "PIL.*"]
+ignore_missing_imports = true  # Pillow < 10 ships without type information
