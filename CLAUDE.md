@@ -36,7 +36,7 @@ This repo is a macOS-focused fork of DevilutionX, the open-source engine for Dia
 
 ## Build and test
 
-**Linux (cloud):** use the upstream CI as reference (`devilutionx/.github/workflows/Linux_x86_64_test.yml`).
+**Linux (cloud):** use the upstream CI as reference: [`.github/workflows/Linux_x86_64_test.yml`](https://github.com/diasurgical/DevilutionX/blob/452eeccc7460d5bd427ca21c9e47f89b953d9e28/.github/workflows/Linux_x86_64_test.yml) at the commit in `UPSTREAM_COMMIT`. Upstream's `.github/` is pruned from `devilutionx/` (`scripts/prune-list.txt`).
 
 ```bash
 cmake -S devilutionx -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_TESTING=ON

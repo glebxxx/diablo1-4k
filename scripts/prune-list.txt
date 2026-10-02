@@ -1,0 +1,94 @@
+# Paths removed from the upstream DevilutionX tree when building devilutionx/.
+#
+# Read by scripts/sync-upstream.sh. Format:
+#   - one path per line, relative to the upstream repository root;
+#   - a trailing "/" marks a directory (informational only);
+#   - no globs, no "..", no absolute paths;
+#   - "#" starts a comment, blank lines are ignored.
+#
+# Rule of thumb: remove only what is NOT needed to configure, build, test
+# and run DevilutionX on macOS (x86_64 + arm64). Never prune Source/: our
+# patches must keep applying to pristine upstream sources, and platform
+# code there is guarded by #ifdef anyway. Never prune LICENSE.md, README.md
+# (it carries upstream's legal notices) or Packaging/resources/ (third-party
+# license texts for the shipped app).
+#
+# Verified at upstream 452eeccc: the pruned tree configures, builds, runs
+# `--version`, and builds the unit tests (see docs/BUILDING-macOS.md).
+
+# --- Other platforms: IDE / project files --------------------------------
+android-project/
+uwp-project/
+CMakeSettings.json
+vcpkg.json
+Brewfile
+
+# --- Upstream CI, dev containers, hosted-service configs ------------------
+# This fork has its own CI in the repository root (.github/workflows/).
+.github/
+.devcontainer/
+codecov.yml
+doxygen.config
+.gitmodules
+.gdbinit
+CODE_OF_CONDUCT.md
+
+# --- CMake toolchains / platform files for consoles, handhelds, Windows,
+#     Linux cross-compiles, iOS, Emscripten, MacPorts and OS X 10.4.
+#     CMake/Platforms.cmake only include()s them behind platform checks.
+CMake/platforms/
+
+# --- 3rdParty glue for Windows-only dependencies --------------------------
+3rdParty/tolk/
+3rdParty/find_steam_game/
+
+# --- Packaging for other platforms ----------------------------------------
+# Kept: Packaging/apple/ (Info.plist, icons, LaunchScreen.storyboard),
+#       Packaging/resources/ (license texts, icons),
+#       Packaging/windows/devilutionx.rc, devilutionx.exe.manifest, icon.ico
+#       (listed unconditionally in add_executable(); ignored on macOS).
+Packaging/OpenDingux/
+Packaging/amiga/
+Packaging/cpi-gamesh/
+Packaging/ctr/
+Packaging/emscripten/
+Packaging/haiku/
+Packaging/miyoo_mini/
+Packaging/nix/
+Packaging/pi/
+Packaging/ps4/
+Packaging/ps5/
+Packaging/switch/
+Packaging/vita/
+Packaging/xbox-one/
+Packaging/xbox_nxdk/
+Packaging/apple/png2icns_tiger/
+Packaging/windows/CMakePresets.json
+Packaging/windows/README.txt
+Packaging/windows/dos-prep.sh
+Packaging/windows/mingw-pre-vista-gcc.patch
+Packaging/windows/mingw-prep.sh
+Packaging/windows/mingw-prep64.sh
+Packaging/windows/mingw9x-prep.sh
+Packaging/windows/mingwxp-prep.sh
+# Audio taken from the Diablo shareware release (Blizzard); upstream uses it
+# only for the Nintendo 3DS banner. Not needed here, so we do not carry it.
+Packaging/resources/shareware-startup.wav
+
+# --- Docs for other platforms / hosted services ---------------------------
+docs/manual/
+docs/github-codespaces.md
+docs/gh-codespaces-ports-browser.png
+docs/gh-continue-in-codespaces.png
+docs/gh-focus-on-terminal.png
+docs/gh-open-codespace.png
+docs/profiling-linux.md
+
+# --- Tools for other operating systems -----------------------------------
+tools/Dockerfile.s390x
+tools/run_big_endian_tests.sh
+tools/build_and_install_smpq.ps1
+tools/linux_reduced_cpu_variance_run.sh
+tools/update_sdl_android_project.sh
+tools/gdb/
+tools/make_src_dist.py
