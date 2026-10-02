@@ -4,7 +4,10 @@
 
 #include "cursor.h"
 #include "engine/assets.hpp"
+#include "game_mode.hpp"
 #include "init.hpp"
+#include "levels/dun_tile_data.hpp"
+#include "options.h"
 #include "tables/playerdat.hpp"
 
 using namespace devilution;
@@ -203,4 +206,44 @@ TEST(Player, CreatePlayer)
 	Players.resize(1);
 	CreatePlayer(Players[0], HeroClass::Rogue);
 	AssertPlayer(Players[0]);
+}
+
+TEST(Player, IsRunningEnabledOnCurrentLevel)
+{
+	const dungeon_type oldLevelType = leveltype;
+	const bool oldIsMultiplayer = gbIsMultiplayer;
+	const uint8_t oldRunInTown = sgGameInitInfo.bRunInTown;
+	OptionEntryBoolean &runInDungeons = GetOptions().Gameplay.runInDungeons;
+	const bool oldRunInDungeons = *runInDungeons;
+
+	// In town only the synchronized "Run in Town" game setting matters (unchanged upstream behaviour).
+	leveltype = DTYPE_TOWN;
+	runInDungeons.SetValue(true);
+	for (const bool isMultiplayer : { false, true }) {
+		gbIsMultiplayer = isMultiplayer;
+		sgGameInitInfo.bRunInTown = 0;
+		EXPECT_FALSE(IsRunningEnabledOnCurrentLevel());
+		sgGameInitInfo.bRunInTown = 1;
+		EXPECT_TRUE(IsRunningEnabledOnCurrentLevel());
+	}
+
+	// Outside of town "Run in Dungeons" applies to single player games only.
+	sgGameInitInfo.bRunInTown = 1;
+	for (const dungeon_type levelType : { DTYPE_CATHEDRAL, DTYPE_CATACOMBS, DTYPE_CAVES, DTYPE_HELL, DTYPE_NEST, DTYPE_CRYPT }) {
+		leveltype = levelType;
+
+		gbIsMultiplayer = false;
+		runInDungeons.SetValue(false);
+		EXPECT_FALSE(IsRunningEnabledOnCurrentLevel());
+		runInDungeons.SetValue(true);
+		EXPECT_TRUE(IsRunningEnabledOnCurrentLevel());
+
+		gbIsMultiplayer = true;
+		EXPECT_FALSE(IsRunningEnabledOnCurrentLevel());
+	}
+
+	leveltype = oldLevelType;
+	gbIsMultiplayer = oldIsMultiplayer;
+	sgGameInitInfo.bRunInTown = oldRunInTown;
+	runInDungeons.SetValue(oldRunInDungeons);
 }

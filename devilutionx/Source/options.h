@@ -573,6 +573,8 @@ struct GameplayOptions : OptionCategoryBase {
 	OptionEntryInt<int> tickRate;
 	/** @brief Enable double walk speed when in town. */
 	OptionEntryBoolean runInTown;
+	/** @brief Enable double walk speed outside of town (single player only; ignored in multiplayer and demo mode). */
+	OptionEntryBoolean runInDungeons;
 	/** @brief Do not let the mouse leave the application window. */
 	OptionEntryBoolean grabInput;
 	/** @brief Pause the game when focus is lost. */

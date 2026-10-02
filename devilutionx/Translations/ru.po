@@ -1596,6 +1596,23 @@ msgstr "Остановить персонажа"
 msgid "Stops walking and cancel pending actions."
 msgstr "Останавливает ходьбу и отменяет отложенные действия."
 
+#: Source/diablo.cpp:1953
+msgid "Toggle run in dungeons"
+msgstr "Бег в подземельях вкл/выкл"
+
+#: Source/diablo.cpp:1954
+msgid "Toggles jogging/fast walking outside of town (single player only)."
+msgstr ""
+"Включает/выключает бег за пределами города (только в одиночной игре)."
+
+#: Source/diablo.cpp:1960
+msgid "Running in dungeons enabled"
+msgstr "Бег в подземельях включён"
+
+#: Source/diablo.cpp:1960
+msgid "Running in dungeons disabled"
+msgstr "Бег в подземельях выключен"
+
 # Подсвечиваем всё-таки не один предмет, а все. Так логичнее.
 #: Source/diablo.cpp:1931 Source/diablo.cpp:2517
 msgid "Item highlighting"
@@ -2317,6 +2334,10 @@ msgstr "Разрешение"
 #: Source/engine/demomode.cpp:190 Source/options.cpp:837
 msgid "Run in Town"
 msgstr "Бег в городе"
+
+#: Source/options.cpp:845
+msgid "Run in Dungeons"
+msgstr "Бег в подземельях"
 
 #: Source/engine/demomode.cpp:191 Source/options.cpp:840
 msgid "Theo Quest"
@@ -4441,6 +4462,15 @@ msgid ""
 msgstr ""
 "Включить бег трусцой/быструю ходьбу в городе для Diablo и Hellfire. Эта "
 "опция была введена в дополнении."
+
+#: Source/options.cpp:845
+msgid ""
+"Enable jogging/fast walking outside of town. Single player only: it has no "
+"effect in multiplayer games and during demo recording or playback."
+msgstr ""
+"Включить бег трусцой/быструю ходьбу за пределами города. Только для "
+"одиночной игры: не действует в сетевой игре, а также при записи и "
+"воспроизведении демо."
 
 #: Source/options.cpp:838
 msgid "Grab Input"

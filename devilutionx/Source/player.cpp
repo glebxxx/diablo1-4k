@@ -23,6 +23,7 @@
 #include "debug.h"
 #endif
 #include "engine/backbuffer_state.hpp"
+#include "engine/demomode.h"
 #include "engine/load_cl2.hpp"
 #include "engine/load_file.hpp"
 #include "engine/points_in_rectangle_range.hpp"
@@ -143,7 +144,7 @@ void HandleWalkMode(Player &player, Direction dir)
 void StartWalkAnimation(Player &player, Direction dir, bool pmWillBeCalled)
 {
 	int8_t skippedFrames = -2;
-	if (leveltype == DTYPE_TOWN && sgGameInitInfo.bRunInTown != 0)
+	if (IsRunningEnabledOnCurrentLevel())
 		skippedFrames = 2;
 	if (pmWillBeCalled)
 		skippedFrames += 1;
@@ -403,7 +404,7 @@ void InitLevelChange(Player &player)
 bool DoWalk(Player &player)
 {
 	// Play walking sound effect on certain animation frames
-	if (*GetOptions().Audio.walkingSound && (leveltype != DTYPE_TOWN || sgGameInitInfo.bRunInTown == 0)) {
+	if (*GetOptions().Audio.walkingSound && !IsRunningEnabledOnCurrentLevel()) {
 		if (player.AnimInfo.currentFrame == 0
 		    || player.AnimInfo.currentFrame == 4) {
 			PlaySfxLoc(SfxID::Walk, player.position.tile);
@@ -2206,6 +2207,22 @@ void ResetPlayerGFX(Player &player)
 	for (PlayerAnimationData &animData : player.AnimationData) {
 		animData.sprites = std::nullopt;
 	}
+}
+
+bool IsRunningEnabledOnCurrentLevel()
+{
+	if (leveltype == DTYPE_TOWN)
+		return sgGameInitInfo.bRunInTown != 0;
+
+	// Running outside of town is a local extension that is not part of the networked game settings.
+	// Every client simulates the walk speed of every player, so it must stay off in multiplayer.
+	// The demo file header (v3) has no field for it either, so keep it off while recording or playing back demos.
+	// (demo::OverrideOptions() deliberately leaves the option alone: overriding it there could get the forced value
+	// written back to diablo.ini once the viewer takes over a demo with Escape and the options are saved.)
+	if (gbIsMultiplayer || demo::IsRunning() || demo::IsRecording())
+		return false;
+
+	return *GetOptions().Gameplay.runInDungeons;
 }
 
 void NewPlrAnim(Player &player, player_graphic graphic, Direction dir, AnimationDistributionFlags flags /*= AnimationDistributionFlags::None*/, int8_t numSkippedFrames /*= 0*/, int8_t distributeFramesBeforeFrame /*= 0*/)

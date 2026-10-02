@@ -950,6 +950,14 @@ void ResetPlayerGFX(Player &player);
  * @param distributeFramesBeforeFrame Distribute the numSkippedFrames only before this frame
  */
 void NewPlrAnim(Player &player, player_graphic graphic, Direction dir, AnimationDistributionFlags flags = AnimationDistributionFlags::None, int8_t numSkippedFrames = 0, int8_t distributeFramesBeforeFrame = 0);
+/**
+ * @brief Whether walking players use the fast "jogging" walk on the current level.
+ *
+ * In town this follows the synchronized "Run in Town" game setting.
+ * Outside of town it follows the "Run in Dungeons" option, but only in single player games
+ * and never while a demo is recorded or played back, so multiplayer and demos stay deterministic.
+ */
+bool IsRunningEnabledOnCurrentLevel();
 void SetPlrAnims(Player &player);
 void CreatePlayer(Player &player, HeroClass c);
 int CalcStatDiff(Player &player);

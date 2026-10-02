@@ -1949,6 +1949,19 @@ void InitKeymapActions()
 	    nullptr,
 	    CanPlayerTakeAction);
 	options.Keymapper.AddAction(
+	    "ToggleRunInDungeons",
+	    N_("Toggle run in dungeons"),
+	    N_("Toggles jogging/fast walking outside of town (single player only)."),
+	    'J',
+	    [] {
+		    OptionEntryBoolean &runInDungeons = GetOptions().Gameplay.runInDungeons;
+		    runInDungeons.SetValue(!*runInDungeons);
+		    if (!demo::IsRunning()) SaveOptions();
+		    EventPlrMsg(*runInDungeons ? _("Running in dungeons enabled") : _("Running in dungeons disabled"), UiFlags::ColorWhite);
+	    },
+	    nullptr,
+	    [] { return !gbIsMultiplayer && CanPlayerTakeAction(); });
+	options.Keymapper.AddAction(
 	    "ItemHighlighting",
 	    N_("Item highlighting"),
 	    N_("Show/hide items on ground."),

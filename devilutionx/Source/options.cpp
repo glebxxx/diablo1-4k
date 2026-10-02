@@ -842,6 +842,7 @@ GameplayOptions::GameplayOptions()
     : OptionCategoryBase("Game", N_("Gameplay"), N_("Gameplay Settings"))
     , tickRate("Speed", OptionEntryFlags::Invisible, "Speed", "Gameplay ticks per second.", 20)
     , runInTown("Run in Town", OptionEntryFlags::CantChangeInMultiPlayer, N_("Run in Town"), N_("Enable jogging/fast walking in town for Diablo and Hellfire. This option was introduced in the expansion."), false)
+    , runInDungeons("Run in Dungeons", OptionEntryFlags::CantChangeInMultiPlayer, N_("Run in Dungeons"), N_("Enable jogging/fast walking outside of town. Single player only: it has no effect in multiplayer games and during demo recording or playback."), true)
     , grabInput("Grab Input", OptionEntryFlags::None, N_("Grab Input"), N_("When enabled mouse is locked to the game window."), false)
     , pauseOnFocusLoss("Pause Game When Window Loses Focus", OptionEntryFlags::None, N_("Pause Game When Window Loses Focus"), N_("When enabled, the game will pause when focus is lost."), true)
     , theoQuest("Theo Quest", OptionEntryFlags::CantChangeInGame | OptionEntryFlags::OnlyHellfire, N_("Theo Quest"), N_("Enable Little Girl quest."), false)
@@ -897,6 +898,7 @@ std::vector<OptionEntryBase *> GameplayOptions::GetEntries()
 		&theoQuest,
 		&cowQuest,
 		&runInTown,
+		&runInDungeons,
 		&quickCast,
 		&testBard,
 		&testBarbarian,
