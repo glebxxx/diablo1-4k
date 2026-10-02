@@ -1,0 +1,16 @@
+# Build output
+/build/
+/build-*/
+/dist/
+
+# Game data must never be committed
+*.mpq
+*.MPQ
+/work/
+/gamedata/
+*.hsv
+
+# macOS / editors
+.DS_Store
+.vscode/
+.idea/
