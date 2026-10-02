@@ -2,6 +2,8 @@
 # Build DevilutionX (this fork) natively on macOS with only the Xcode Command Line Tools.
 # All third-party dependencies are fetched by CMake and linked statically, so no Homebrew packages are needed.
 # Usage: scripts/build.sh [Release|RelWithDebInfo|Debug] [extra cmake args...]
+# The fork's default resolution is Full HD (1920x1080); override with DEFAULT_WIDTH=/DEFAULT_HEIGHT= env vars.
+# Players can change it any time in Settings > Graphics > Resolution (stored in diablo.ini).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -26,6 +28,8 @@ cmake -S "$ROOT/devilutionx" -B "$BUILD_DIR" \
 	-DDEVILUTIONX_SYSTEM_LIBPNG=OFF \
 	-DDEVILUTIONX_SYSTEM_LIBSODIUM=OFF \
 	-DDEVILUTIONX_SYSTEM_LUA=OFF \
+	-DDEFAULT_WIDTH="${DEFAULT_WIDTH:-1920}" \
+	-DDEFAULT_HEIGHT="${DEFAULT_HEIGHT:-1080}" \
 	"$@"
 cmake --build "$BUILD_DIR" -j "$JOBS"
 

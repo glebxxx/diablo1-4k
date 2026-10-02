@@ -53,6 +53,8 @@ You need the Xcode Command Line Tools (`xcode-select --install`) and CMake 3.22 
 
 Display profiles live in `config/` (`./scripts/run.sh --list`). Details, tests and the patch workflow: [docs/BUILDING-macOS.md](docs/BUILDING-macOS.md).
 
+**Defaults:** new installs start in **Full HD (1920×1080)**. You can change the resolution and scaling any time in *Settings → Graphics*. Ready-made profiles for Retina/5K are in `config/`.
+
 ## Game data
 
 Copy `DIABDAT.MPQ` (and, for Hellfire, `hellfire.mpq`, `hfmonk.mpq`, `hfmusic.mpq`, `hfvoice.mpq`) from **your own** copy of the game into:
