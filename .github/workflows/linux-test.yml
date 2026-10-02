@@ -1,0 +1,81 @@
+name: Linux tests
+
+# Builds devilutionx/ with tests on Ubuntu and runs ctest against the shareware spawn.mpq,
+# like upstream's Linux_x86_64_test.yml.
+
+on:
+  push:
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
+  pull_request:
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    # Same-repo PRs are already covered by the push event.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 500M
+      CCACHE_COMPILERCHECK: content
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # System googletest/gmock: the vendored googletest only links GTest::gtest_main into the standalone tests,
+      # so crawl_test, ini_test and path_test fail with "gmock/gmock.h not found".
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ccache cmake g++-14 ninja-build wget \
+            libgtest-dev libgmock-dev libsdl2-dev libsodium-dev libpng-dev libbz2-dev
+
+      - name: Switch to GCC 14
+        run: |
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-14 100 --slave /usr/bin/g++ g++ /usr/bin/g++-14
+          sudo update-alternatives --set gcc /usr/bin/gcc-14
+
+      # The build folder holds the FetchContent downloads; ccache holds the compiled objects.
+      - name: Cache build folder and ccache
+        uses: actions/cache@v6
+        with:
+          path: |
+            build
+            .ccache
+          key: linux-test-v1-${{ github.sha }}
+          restore-keys: linux-test-v1-
+
+      - name: Configure
+        run: |
+          cmake -S devilutionx -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DBUILD_TESTING=ON \
+            -DDEVILUTIONX_SYSTEM_BENCHMARK=OFF \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Build
+        run: |
+          ccache -z
+          cmake --build build -j "$(nproc)"
+          ccache -s
+
+      # Shareware data only, exactly like upstream CI. Never commit it.
+      - name: Download spawn.mpq
+        run: wget -qnc https://github.com/diasurgical/devilutionx-assets/releases/download/v2/spawn.mpq -P build
+
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure -j "$(nproc)"

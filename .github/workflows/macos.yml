@@ -1,0 +1,112 @@
+name: macOS
+
+# Builds the self-contained devilutionx.app with the same recipe as scripts/build.sh
+# (Command Line Tools + vendored dependencies) and uploads it as devilutionx-macos-<arch>.zip.
+
+on:
+  push:
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
+  pull_request:
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    # Same-repo PRs are already covered by the push event.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: macos-15-intel
+          - arch: arm64
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 500M
+      CCACHE_COMPILERCHECK: content
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # msgfmt (gettext) is required for the translations (.gmo, including Russian) to be built.
+      - name: Install build tools
+        run: |
+          brew install gettext ccache
+          echo "$(brew --prefix gettext)/bin" >> "$GITHUB_PATH"
+
+      - name: Cache build folder and ccache
+        uses: actions/cache@v6
+        with:
+          path: |
+            build
+            .ccache
+          key: macos-${{ matrix.arch }}-v1-${{ github.sha }}
+          restore-keys: macos-${{ matrix.arch }}-v1-
+
+      # Same flags as scripts/build.sh, plus the remaining optional DEVILUTIONX_SYSTEM_* dependencies vendored so the
+      # app does not pick up Homebrew libraries preinstalled on the runner. zlib and bzip2 come from the macOS SDK
+      # (the vendored zlib does not compile against the macOS 15 SDK: fdopen macro clash).
+      - name: Configure
+        run: |
+          command -v msgfmt
+          cmake -S devilutionx -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=OFF \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=13.3 \
+            -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch }} \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DDEVILUTIONX_SYSTEM_SDL2=OFF \
+            -DDEVILUTIONX_SYSTEM_SDL_IMAGE=OFF \
+            -DDEVILUTIONX_SYSTEM_LIBPNG=OFF \
+            -DDEVILUTIONX_SYSTEM_LIBSODIUM=OFF \
+            -DDEVILUTIONX_SYSTEM_LUA=OFF \
+            -DDEVILUTIONX_SYSTEM_SDL_AUDIOLIB=OFF \
+            -DDEVILUTIONX_SYSTEM_SHEENBIDI=OFF \
+            -DDEVILUTIONX_SYSTEM_UNORDERED_DENSE=OFF \
+            -DDEVILUTIONX_SYSTEM_MAGIC_ENUM=OFF
+
+      - name: Build
+        run: |
+          ccache -z
+          cmake --build build -j "$(sysctl -n hw.ncpu)"
+          ccache -s
+
+      - name: Sign and check the bundle
+        run: |
+          APP=build/devilutionx.app
+          BIN="$APP/Contents/MacOS/devilutionx"
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict "$APP"
+          test -f "$APP/Contents/Resources/ru.gmo" || { echo "::error::ru.gmo missing: translations were not built (msgfmt?)"; exit 1; }
+          lipo -archs "$BIN" | grep -qx '${{ matrix.arch }}' || { echo "::error::unexpected architecture: $(lipo -archs "$BIN")"; exit 1; }
+          otool -L "$BIN"
+          if otool -L "$BIN" | grep -E '/usr/local/|/opt/homebrew/'; then
+            echo "::error::the binary links against Homebrew libraries"
+            exit 1
+          fi
+          "$BIN" --version
+
+      - name: Package
+        run: ditto -c -k --keepParent build/devilutionx.app devilutionx-macos-${{ matrix.arch }}.zip
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: devilutionx-macos-${{ matrix.arch }}
+          path: devilutionx-macos-${{ matrix.arch }}.zip
+          if-no-files-found: error
