@@ -37,7 +37,7 @@ You need to own the original game. No game assets are included.
 | Run in dungeons (single-player, **J** toggles) | ✅ works (`patches/0002`) |
 | Multi-level world zoom, with on-screen buttons on the side | 📝 designed |
 | UI scaling: the interface fills the screen | 📝 designed |
-| Pixel-art post-filters (Scale2x / MMPX) | 📝 planned |
+| Pixel-art post-filters (Scale2x / MMPX) | ✅ works (`patches/0003`) |
 | GPU real-time upscaling ("DLSS-like": FSR1 / MetalFX) | 🔬 research |
 | HD texture packs (AI-upscaled), built locally from your own game files | 🔬 in development |
 | Full Russian version (UI, texts, voice) | ✅ via DevilutionX `ru` + official `ru.mpq` voice pack |

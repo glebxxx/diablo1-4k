@@ -73,6 +73,12 @@ enum class ScalingQuality : uint8_t {
 	AnisotropicFiltering,
 };
 
+enum class PostFilter : uint8_t {
+	None = 0,
+	Scale2x = 1,
+	Mmpx = 2,
+};
+
 enum class FrameRateControl : uint8_t {
 	None = 0,
 #ifndef USE_SDL1
@@ -540,6 +546,10 @@ struct GraphicsOptions : OptionCategoryBase {
 	OptionEntryEnum<ScalingQuality> scaleQuality;
 	/** @brief Only scale by values divisible by the width and height. */
 	OptionEntryBoolean integerScaling;
+	/** @brief Pixel-art magnification filter applied to the final frame on the CPU before upscaling. */
+	OptionEntryEnum<PostFilter> postFilter;
+	/** @brief Magnification factor of the Scale2x/EPX post filter (MMPX is always 2x). */
+	OptionEntryInt<int> postFilterFactor;
 #endif
 	/** @brief Limit frame rate either for vsync or CPU load. */
 	OptionEntryEnum<FrameRateControl> frameRateControl;

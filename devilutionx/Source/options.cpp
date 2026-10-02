@@ -771,6 +771,13 @@ GraphicsOptions::GraphicsOptions()
               { ScalingQuality::AnisotropicFiltering, N_("Anisotropic") },
           })
     , integerScaling("Integer Scaling", OptionEntryFlags::CantChangeInGame | OptionEntryFlags::RecreateUI, N_("Integer Scaling"), N_("Scales the image using whole number pixel ratio."), false)
+    , postFilter("Post Filter", OptionEntryFlags::None, N_("Post Filter"), N_("Smooths the edges of pixel art in the final image before it is scaled to the screen. Costs CPU time. Only used when upscaling."), PostFilter::None,
+          {
+              { PostFilter::None, N_("None") },
+              { PostFilter::Scale2x, N_("Scale2x/EPX") },
+              { PostFilter::Mmpx, N_("MMPX") },
+          })
+    , postFilterFactor("Post Filter Factor", OptionEntryFlags::None, N_("Post Filter Factor"), N_("Magnification of the Scale2x/EPX post filter: 2 or 3 (Scale3x). MMPX always magnifies 2x."), 2, { 2, 3 })
 #endif
     , frameRateControl("Frame Rate Control",
           OptionEntryFlags::RecreateUI
@@ -821,6 +828,8 @@ std::vector<OptionEntryBase *> GraphicsOptions::GetEntries()
 		&upscale,
 		&scaleQuality,
 		&integerScaling,
+		&postFilter,
+		&postFilterFactor,
 #endif
 		&frameRateControl,
 		&brightness,

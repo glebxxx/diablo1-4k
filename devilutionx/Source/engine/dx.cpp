@@ -23,6 +23,7 @@
 
 #include "controls/control_mode.hpp"
 #include "controls/plrctrls.h"
+#include "engine/post_filter.hpp"
 #include "engine/render/primitive_render.hpp"
 #include "headless_mode.hpp"
 #include "init.hpp"
@@ -142,6 +143,7 @@ void dx_cleanup()
 	RendererTextureSurface = nullptr;
 #ifndef USE_SDL1
 	texture = nullptr;
+	ResetPostFilter();
 	FreeVirtualGamepadTextures();
 	if (*GetOptions().Graphics.upscale)
 		SDL_DestroyRenderer(renderer);
@@ -306,13 +308,17 @@ void RenderPresent()
 #ifdef USE_SDL3
 		if (!SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255)) ErrSdl();
 		if (!SDL_RenderClear(renderer)) ErrSdl();
-		if (!SDL_UpdateTexture(texture.get(), nullptr, surface->pixels, surface->pitch)) ErrSdl();
-		if (!SDL_RenderTexture(renderer, texture.get(), nullptr, nullptr)) ErrSdl();
+		if (!RenderPostFiltered(surface)) {
+			if (!SDL_UpdateTexture(texture.get(), nullptr, surface->pixels, surface->pitch)) ErrSdl();
+			if (!SDL_RenderTexture(renderer, texture.get(), nullptr, nullptr)) ErrSdl();
+		}
 #else
 		if (SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255) <= -1) ErrSdl();
 		if (SDL_RenderClear(renderer) <= -1) ErrSdl();
-		if (SDL_UpdateTexture(texture.get(), nullptr, surface->pixels, surface->pitch) <= -1) ErrSdl();
-		if (SDL_RenderCopy(renderer, texture.get(), nullptr, nullptr) <= -1) ErrSdl();
+		if (!RenderPostFiltered(surface)) {
+			if (SDL_UpdateTexture(texture.get(), nullptr, surface->pixels, surface->pitch) <= -1) ErrSdl();
+			if (SDL_RenderCopy(renderer, texture.get(), nullptr, nullptr) <= -1) ErrSdl();
+		}
 #endif
 
 		if (ControlMode == ControlTypes::VirtualGamepad) {
