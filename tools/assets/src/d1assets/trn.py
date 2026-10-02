@@ -28,7 +28,7 @@ def encode(table: Translation) -> bytes:
     arr = np.asarray(table)
     if arr.shape != (TRN_SIZE,):
         raise ValueError(f"translation must have shape (256,), got {arr.shape}")
-    if arr.min() < 0 or arr.max() > 255:
+    if ((arr < 0) | (arr > 255)).any():
         raise ValueError("translation values must be in 0..255")
     return arr.astype(np.uint8).tobytes()
 

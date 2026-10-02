@@ -20,7 +20,7 @@ def encode(palette: Palette) -> bytes:
     arr = np.asarray(palette)
     if arr.shape != (256, 3):
         raise ValueError(f"palette must have shape (256, 3), got {arr.shape}")
-    if arr.min() < 0 or arr.max() > 255:
+    if ((arr < 0) | (arr > 255)).any():
         raise ValueError("palette values must be in 0..255")
     return arr.astype(np.uint8).tobytes()
 

@@ -14,6 +14,7 @@ import argparse
 import sys
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from PIL import Image
@@ -200,8 +201,9 @@ def cmd_export(args: argparse.Namespace) -> int:
             manifest.entries.append(Entry(asset, direction, number, 1, rel, digest, width, height))
             count += 1
     manifest.dump(out)
-    # numpy's stubs confuse ``**kwds`` with the ``allow_pickle`` keyword.
-    np.savez_compressed(out / SOURCE_INDEX_NAME, **index)  # type: ignore[arg-type]
+    # Typed as Any: some numpy stubs confuse ``**kwds`` with the ``allow_pickle`` keyword.
+    arrays: dict[str, Any] = dict(index)
+    np.savez_compressed(out / SOURCE_INDEX_NAME, **arrays)
     print(f"exported {count} frame(s) of {asset} to {out}")
     return 0
 

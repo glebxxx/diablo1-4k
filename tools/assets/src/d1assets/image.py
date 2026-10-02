@@ -28,7 +28,7 @@ def as_indexed(pixels: npt.ArrayLike) -> IndexedImage:
     arr = np.asarray(pixels)
     if arr.ndim != 2:
         raise ValueError(f"indexed image must be 2-D, got shape {arr.shape}")
-    if arr.size and (arr.min() < TRANSPARENT or arr.max() > 255):
+    if ((arr < TRANSPARENT) | (arr > 255)).any():
         raise ValueError("indexed image values must be in -1..255")
     return arr.astype(np.int16, copy=False)
 

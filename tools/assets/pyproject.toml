@@ -42,3 +42,7 @@ ignore = ["B905"]  # zip(strict=...) adds noise here; lengths are checked explic
 python_version = "3.10"
 files = ["src"]
 warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = ["PIL", "PIL.*"]
+ignore_missing_imports = true  # Pillow < 10 ships without type information

@@ -80,7 +80,7 @@ def encode(pixels: npt.ArrayLike, palette: Palette | None) -> bytes:
     arr = np.asarray(pixels)
     if arr.ndim != 2 or arr.shape[0] == 0 or arr.shape[1] == 0:
         raise ValueError("PCX pixels must be a non-empty 2-D array")
-    if arr.min() < 0 or arr.max() > 255:
+    if ((arr < 0) | (arr > 255)).any():
         raise ValueError("PCX pixels must be in 0..255")
     height, width = arr.shape
     bytes_per_line = width + (width & 1)
