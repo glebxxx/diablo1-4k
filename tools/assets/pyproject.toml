@@ -13,7 +13,7 @@ dependencies = ["numpy>=1.23", "Pillow>=9.1"]
 
 [project.optional-dependencies]
 test = ["pytest>=7", "hypothesis>=6.70"]
-dev = ["pytest>=7", "hypothesis>=6.70", "ruff>=0.4", "mypy>=1.8"]
+dev = ["pytest>=7", "hypothesis>=6.70", "ruff>=0.16,<0.17", "mypy>=1.8"]
 
 [project.scripts]
 d1assets = "d1assets.cli:main"

@@ -38,7 +38,7 @@ from d1assets import cl2, pal
 from d1assets.image import to_pil
 from d1assets.mpq import MpqArchive
 
-mpq = MpqArchive("DIABDAT.MPQ")                       # your own copy
+mpq = MpqArchive("DIABDAT.MPQ")  # your own copy
 palette = pal.decode(mpq.read("levels\\towndata\\town.pal"))
 directions = cl2.decode(mpq.read("monsters\\zombie\\zombiew.cl2"), width=128)
 to_pil(directions[0][0], palette).save("zombie.png")
