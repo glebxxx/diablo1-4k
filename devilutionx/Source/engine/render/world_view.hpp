@@ -92,6 +92,9 @@ void RecalcWorldView();
 /** @brief Whether the layered renderer is used for game frames. */
 bool IsLayeredActive();
 
+/** @brief Replaces the runtime geometry without a renderer (tests only). */
+void SetWorldViewForTesting(const WorldView &view);
+
 void SetWorldZoom(int ws);
 void WorldZoomIn();
 void WorldZoomOut();

@@ -48,6 +48,10 @@ set(tests
   spell_ui_test
   char_panel_test
   game_menu_test
+  layered_compose_test
+  ui_layer_test
+  world_picking_test
+  world_view_test
 )
 set(standalone_tests
   codec_test

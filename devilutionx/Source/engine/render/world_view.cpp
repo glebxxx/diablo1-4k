@@ -240,6 +240,12 @@ void RecalcWorldView()
 	ReleaseLayers();
 }
 
+void SetWorldViewForTesting(const WorldView &view)
+{
+	CurrentView = view;
+	LayeredActive = view.layered;
+}
+
 void SetWorldZoom(int ws)
 {
 	if (!IsLayeredActive())
