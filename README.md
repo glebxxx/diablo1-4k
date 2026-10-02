@@ -44,7 +44,7 @@ You need to own the original game. No game assets are included.
 
 ## Build (macOS)
 
-You need the Xcode Command Line Tools (`xcode-select --install`) and CMake 3.22 or newer.
+You need the Xcode Command Line Tools (`xcode-select --install`) and CMake 3.22 or newer. For translations, including the Russian UI, you also need gettext: `brew install gettext`.
 
 ```bash
 ./scripts/build.sh            # -> build/devilutionx.app

@@ -10,6 +10,13 @@ shift || true
 BUILD_DIR="${BUILD_DIR:-$ROOT/build}"
 JOBS="$(sysctl -n hw.ncpu 2>/dev/null || echo 4)"
 
+# Translations (.gmo, including Russian) are only compiled when gettext's msgfmt is available.
+# Command Line Tools do not ship it; without it the game is English-only.
+if ! command -v msgfmt >/dev/null; then
+	echo "WARNING: msgfmt not found - translations (e.g. Russian) will NOT be built." >&2
+	echo "         Install it with: brew install gettext" >&2
+fi
+
 cmake -S "$ROOT/devilutionx" -B "$BUILD_DIR" \
 	-DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
 	-DBUILD_TESTING=OFF \
