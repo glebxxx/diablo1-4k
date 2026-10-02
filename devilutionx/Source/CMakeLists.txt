@@ -76,6 +76,7 @@ set(libdevilutionx_SRCS
   engine/dx.cpp
   engine/events.cpp
   engine/palette.cpp
+  engine/post_filter.cpp
   engine/sound_position.cpp
   engine/trn.cpp
 
@@ -789,6 +790,11 @@ target_link_dependencies(libdevilutionx_resolution_list PUBLIC
   libdevilutionx_strings
 )
 
+add_devilutionx_object_library(libdevilutionx_upscalers
+  utils/upscalers/mmpx.cpp
+  utils/upscalers/scale2x.cpp
+)
+
 add_devilutionx_object_library(libdevilutionx_quick_messages
   quick_messages.cpp
 )
@@ -1117,6 +1123,7 @@ target_link_dependencies(libdevilutionx PUBLIC
   libdevilutionx_text_render
   libdevilutionx_txtdata
   libdevilutionx_ticks
+  libdevilutionx_upscalers
   libdevilutionx_utf8
   libdevilutionx_utils_console
 )

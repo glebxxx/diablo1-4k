@@ -1,0 +1,1195 @@
+diff --git a/CMake/Tests.cmake b/CMake/Tests.cmake
+index b6ea2d6..931ea92 100644
+--- a/CMake/Tests.cmake
++++ b/CMake/Tests.cmake
+@@ -67,6 +67,7 @@ set(standalone_tests
+   sheen_bidi_test
+   static_vector_test
+   str_cat_test
++  upscalers_test
+   utf8_test
+ )
+ if(NOT USE_SDL1)
+@@ -171,6 +172,7 @@ target_link_dependencies(random_test PRIVATE libdevilutionx_random)
+ target_link_dependencies(resolution_list_test PRIVATE libdevilutionx_resolution_list)
+ target_link_dependencies(static_vector_test PRIVATE libdevilutionx_random app_fatal_for_testing)
+ target_link_dependencies(str_cat_test PRIVATE libdevilutionx_strings)
++target_link_dependencies(upscalers_test PRIVATE libdevilutionx_upscalers)
+ if(DEVILUTIONX_SCREENSHOT_FORMAT STREQUAL DEVILUTIONX_SCREENSHOT_FORMAT_PNG AND NOT USE_SDL1)
+   target_link_dependencies(text_render_integration_test
+     PRIVATE
+diff --git a/Source/CMakeLists.txt b/Source/CMakeLists.txt
+index cd6c8cd..9544209 100644
+--- a/Source/CMakeLists.txt
++++ b/Source/CMakeLists.txt
+@@ -76,6 +76,7 @@ set(libdevilutionx_SRCS
+   engine/dx.cpp
+   engine/events.cpp
+   engine/palette.cpp
++  engine/post_filter.cpp
+   engine/sound_position.cpp
+   engine/trn.cpp
+ 
+@@ -789,6 +790,11 @@ target_link_dependencies(libdevilutionx_resolution_list PUBLIC
+   libdevilutionx_strings
+ )
+ 
++add_devilutionx_object_library(libdevilutionx_upscalers
++  utils/upscalers/mmpx.cpp
++  utils/upscalers/scale2x.cpp
++)
++
+ add_devilutionx_object_library(libdevilutionx_quick_messages
+   quick_messages.cpp
+ )
+@@ -1117,6 +1123,7 @@ target_link_dependencies(libdevilutionx PUBLIC
+   libdevilutionx_text_render
+   libdevilutionx_txtdata
+   libdevilutionx_ticks
++  libdevilutionx_upscalers
+   libdevilutionx_utf8
+   libdevilutionx_utils_console
+ )
+diff --git a/Source/engine/dx.cpp b/Source/engine/dx.cpp
+index 54b2d00..ca75790 100644
+--- a/Source/engine/dx.cpp
++++ b/Source/engine/dx.cpp
+@@ -23,6 +23,7 @@
+ 
+ #include "controls/control_mode.hpp"
+ #include "controls/plrctrls.h"
++#include "engine/post_filter.hpp"
+ #include "engine/render/primitive_render.hpp"
+ #include "headless_mode.hpp"
+ #include "init.hpp"
+@@ -142,6 +143,7 @@ void dx_cleanup()
+ 	RendererTextureSurface = nullptr;
+ #ifndef USE_SDL1
+ 	texture = nullptr;
++	ResetPostFilter();
+ 	FreeVirtualGamepadTextures();
+ 	if (*GetOptions().Graphics.upscale)
+ 		SDL_DestroyRenderer(renderer);
+@@ -306,13 +308,17 @@ void RenderPresent()
+ #ifdef USE_SDL3
+ 		if (!SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255)) ErrSdl();
+ 		if (!SDL_RenderClear(renderer)) ErrSdl();
+-		if (!SDL_UpdateTexture(texture.get(), nullptr, surface->pixels, surface->pitch)) ErrSdl();
+-		if (!SDL_RenderTexture(renderer, texture.get(), nullptr, nullptr)) ErrSdl();
++		if (!RenderPostFiltered(surface)) {
++			if (!SDL_UpdateTexture(texture.get(), nullptr, surface->pixels, surface->pitch)) ErrSdl();
++			if (!SDL_RenderTexture(renderer, texture.get(), nullptr, nullptr)) ErrSdl();
++		}
+ #else
+ 		if (SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255) <= -1) ErrSdl();
+ 		if (SDL_RenderClear(renderer) <= -1) ErrSdl();
+-		if (SDL_UpdateTexture(texture.get(), nullptr, surface->pixels, surface->pitch) <= -1) ErrSdl();
+-		if (SDL_RenderCopy(renderer, texture.get(), nullptr, nullptr) <= -1) ErrSdl();
++		if (!RenderPostFiltered(surface)) {
++			if (SDL_UpdateTexture(texture.get(), nullptr, surface->pixels, surface->pitch) <= -1) ErrSdl();
++			if (SDL_RenderCopy(renderer, texture.get(), nullptr, nullptr) <= -1) ErrSdl();
++		}
+ #endif
+ 
+ 		if (ControlMode == ControlTypes::VirtualGamepad) {
+diff --git a/Source/engine/post_filter.cpp b/Source/engine/post_filter.cpp
+new file mode 100644
+index 0000000..509dfd1
+--- /dev/null
++++ b/Source/engine/post_filter.cpp
+@@ -0,0 +1,261 @@
++/**
++ * @file post_filter.cpp
++ *
++ * CPU pixel-art post filter (Scale2x/EPX, MMPX) for the final frame.
++ */
++#ifndef USE_SDL1
++
++#include "engine/post_filter.hpp"
++
++#include <cstdint>
++#include <cstdlib>
++#include <expected>
++#include <string>
++#include <string_view>
++
++#ifdef USE_SDL3
++#include <SDL3/SDL_error.h>
++#include <SDL3/SDL_iostream.h>
++#include <SDL3/SDL_pixels.h>
++#include <SDL3/SDL_render.h>
++#include <SDL3/SDL_surface.h>
++#else
++#include <SDL.h>
++
++#include "utils/sdl_compat.h"
++#endif
++
++#define DEVILUTIONX_SCREENSHOT_FORMAT_PCX 0
++#define DEVILUTIONX_SCREENSHOT_FORMAT_PNG 1
++
++#if DEVILUTIONX_SCREENSHOT_FORMAT == DEVILUTIONX_SCREENSHOT_FORMAT_PNG
++#include "utils/surface_to_png.hpp"
++#endif
++
++#include "appfat.h"
++#include "engine/surface.hpp"
++#include "options.h"
++#include "utils/display.h"
++#include "utils/log.hpp"
++#include "utils/parse_int.hpp"
++#include "utils/paths.h"
++#include "utils/sdl_ptrs.h"
++#include "utils/sdl_wrap.h"
++#include "utils/str_cat.hpp"
++#include "utils/upscalers/upscalers.hpp"
++
++namespace devilution {
++
++namespace {
++
++/** @brief Streaming texture that receives the magnified frame (factor x the game resolution). */
++SDLTextureUniquePtr FilteredTexture;
++
++/** @brief Size of the last texture that could not be created (e.g. too large for the GPU), so that it is not retried every frame. */
++int FailedWidth = 0;
++int FailedHeight = 0;
++
++/** @brief Frames presented through the renderer so far, counted only when `DVX_DUMP_FRAME` is set. */
++int PresentedFrames = 0;
++
++/** @brief Frame number (1-based) from `DVX_DUMP_FRAME` whose pre- and post-filter images are written to the pref path. */
++int GetDumpFrameNumber()
++{
++	static const int FrameNumber = [] {
++		const char *value = std::getenv("DVX_DUMP_FRAME");
++		if (value == nullptr)
++			return -1;
++		const ParseIntResult<int> parsed = ParseInt<int>(value, 1);
++		if (!parsed.has_value()) {
++			LogError("DVX_DUMP_FRAME: expected a frame number >= 1, got \"{}\"", value);
++			return -1;
++		}
++		return *parsed;
++	}();
++	return FrameNumber;
++}
++
++int GetFactor(PostFilter filter)
++{
++	if (filter == PostFilter::Mmpx)
++		return 2;
++	return *GetOptions().Graphics.postFilterFactor == 3 ? 3 : 2;
++}
++
++void ApplyFilter(PostFilter filter, int factor, const SDL_Surface &src, void *dstPixels, int dstPitch)
++{
++	const upscalers::ConstImageView srcView {
++		static_cast<const uint32_t *>(src.pixels),
++		src.w,
++		src.h,
++		src.pitch / static_cast<int>(sizeof(uint32_t)),
++	};
++	const upscalers::ImageView dstView {
++		static_cast<uint32_t *>(dstPixels),
++		src.w * factor,
++		src.h * factor,
++		dstPitch / static_cast<int>(sizeof(uint32_t)),
++	};
++	if (filter == PostFilter::Mmpx) {
++		upscalers::Mmpx2x(srcView, dstView);
++	} else if (factor == 3) {
++		upscalers::Scale3x(srcView, dstView);
++	} else {
++		upscalers::Scale2x(srcView, dstView);
++	}
++}
++
++void DumpSurface(SDL_Surface *surface, std::string_view name)
++{
++#if DEVILUTIONX_SCREENSHOT_FORMAT == DEVILUTIONX_SCREENSHOT_FORMAT_PNG
++	const std::string path = StrCat(paths::PrefPath(), "frame-", PresentedFrames, "-", name, ".png");
++	SDL_IOStream *out = SDL_IOFromFile(path.c_str(), "wb");
++	if (out == nullptr) {
++		LogError("DVX_DUMP_FRAME: failed to open {}: {}", path, SDL_GetError());
++		SDL_ClearError();
++		return;
++	}
++	const std::expected<void, std::string> result = WriteSurfaceToFilePng(Surface(surface), out);
++	if (!result.has_value()) {
++		LogError("DVX_DUMP_FRAME: failed to write {}: {}", path, result.error());
++		return;
++	}
++	Log("DVX_DUMP_FRAME: wrote {}", path);
++#else
++	LogError("DVX_DUMP_FRAME: {} not written, PNG support is not available in this build", name);
++#endif
++}
++
++void DumpFiltered(PostFilter filter, int factor, SDL_Surface *src, std::string_view name)
++{
++#ifdef USE_SDL3
++	SDLSurfaceUniquePtr dst { SDL_CreateSurface(src->w * factor, src->h * factor, src->format) };
++	if (dst == nullptr) {
++		LogError("DVX_DUMP_FRAME: {}", SDL_GetError());
++		SDL_ClearError();
++		return;
++	}
++#else
++	SDLSurfaceUniquePtr dst = SDLWrap::CreateRGBSurfaceWithFormat(0, src->w * factor, src->h * factor, 32, src->format->format);
++#endif
++	ApplyFilter(filter, factor, *src, dst->pixels, dst->pitch);
++	DumpSurface(dst.get(), name);
++}
++
++bool EnsureFilteredTexture(int width, int height)
++{
++	if (FilteredTexture != nullptr) {
++#ifdef USE_SDL3
++		if (FilteredTexture->w == width && FilteredTexture->h == height)
++			return true;
++#else
++		int w;
++		int h;
++		if (SDL_QueryTexture(FilteredTexture.get(), nullptr, nullptr, &w, &h) == 0 && w == width && h == height)
++			return true;
++#endif
++		FilteredTexture = nullptr;
++	}
++	if (width == FailedWidth && height == FailedHeight)
++		return false;
++#ifdef USE_SDL3
++	FilteredTexture = SDLTextureUniquePtr { SDL_CreateTexture(renderer, texture->format, SDL_TEXTUREACCESS_STREAMING, width, height) };
++#else
++	Uint32 format;
++	if (SDL_QueryTexture(texture.get(), &format, nullptr, nullptr, nullptr) < 0) {
++		LogError("Post filter: SDL_QueryTexture: {}", SDL_GetError());
++		SDL_ClearError();
++		return false;
++	}
++	FilteredTexture = SDLTextureUniquePtr { SDL_CreateTexture(renderer, format, SDL_TEXTUREACCESS_STREAMING, width, height) };
++#endif
++	if (FilteredTexture == nullptr) {
++		LogError("Post filter: failed to create a {}x{} texture, showing the frame unfiltered: {}", width, height, SDL_GetError());
++		SDL_ClearError();
++		FailedWidth = width;
++		FailedHeight = height;
++		return false;
++	}
++	return true;
++}
++
++/**
++ * @brief Whether the frame is a regular game frame: the global texture and the surface have the
++ * game resolution and 32-bit pixels.
++ *
++ * Video playback (storm_svid.cpp) replaces the global texture with one of the video's size.
++ */
++bool IsRegularFrame(const SDL_Surface &surface)
++{
++	if (texture == nullptr || surface.w != gnScreenWidth || surface.h != gnScreenHeight)
++		return false;
++#ifdef USE_SDL3
++	if (texture->w != gnScreenWidth || texture->h != gnScreenHeight)
++		return false;
++	return SDL_BYTESPERPIXEL(surface.format) == 4;
++#else
++	int w;
++	int h;
++	if (SDL_QueryTexture(texture.get(), nullptr, nullptr, &w, &h) < 0 || w != gnScreenWidth || h != gnScreenHeight)
++		return false;
++	return surface.format->BytesPerPixel == 4;
++#endif
++}
++
++} // namespace
++
++bool RenderPostFiltered(SDL_Surface *surface)
++{
++	const bool dump = GetDumpFrameNumber() > 0 && ++PresentedFrames == GetDumpFrameNumber();
++	if (dump)
++		DumpSurface(surface, "pre");
++
++	const PostFilter filter = *GetOptions().Graphics.postFilter;
++	if (filter != PostFilter::Scale2x && filter != PostFilter::Mmpx) {
++		if (FilteredTexture != nullptr)
++			ResetPostFilter();
++		return false;
++	}
++	if (!IsRegularFrame(*surface))
++		return false;
++
++	const int factor = GetFactor(filter);
++	if (dump)
++		DumpFiltered(filter, factor, surface, StrCat("post-", filter == PostFilter::Mmpx ? "mmpx" : "scale", factor, "x"));
++
++	if (!EnsureFilteredTexture(surface->w * factor, surface->h * factor))
++		return false;
++
++	void *pixels;
++	int pitch;
++#ifdef USE_SDL3
++	if (!SDL_LockTexture(FilteredTexture.get(), nullptr, &pixels, &pitch)) {
++#else
++	if (SDL_LockTexture(FilteredTexture.get(), nullptr, &pixels, &pitch) < 0) {
++#endif
++		LogError("Post filter: SDL_LockTexture: {}", SDL_GetError());
++		SDL_ClearError();
++		ResetPostFilter();
++		return false;
++	}
++	ApplyFilter(filter, factor, *surface, pixels, pitch);
++	SDL_UnlockTexture(FilteredTexture.get());
++
++#ifdef USE_SDL3
++	if (!SDL_RenderTexture(renderer, FilteredTexture.get(), nullptr, nullptr)) ErrSdl();
++#else
++	if (SDL_RenderCopy(renderer, FilteredTexture.get(), nullptr, nullptr) <= -1) ErrSdl();
++#endif
++	return true;
++}
++
++void ResetPostFilter()
++{
++	FilteredTexture = nullptr;
++	FailedWidth = 0;
++	FailedHeight = 0;
++}
++
++} // namespace devilution
++
++#endif
+diff --git a/Source/engine/post_filter.hpp b/Source/engine/post_filter.hpp
+new file mode 100644
+index 0000000..7912aa8
+--- /dev/null
++++ b/Source/engine/post_filter.hpp
+@@ -0,0 +1,34 @@
++/**
++ * @file post_filter.hpp
++ *
++ * CPU pixel-art post filter (Scale2x/EPX, MMPX) for the final frame.
++ */
++#pragma once
++
++#ifndef USE_SDL1
++
++#ifdef USE_SDL3
++#include <SDL3/SDL_surface.h>
++#else
++#include <SDL.h>
++#endif
++
++namespace devilution {
++
++/**
++ * @brief Renders the frame through the post filter selected in the options.
++ *
++ * Magnifies `surface` (the 32-bit renderer texture surface) into a separate streaming texture and
++ * copies it to the renderer. The logical render size is not changed.
++ *
++ * @return false if nothing was rendered: the filter is off, or the frame is not a regular game
++ * frame (e.g. during video playback). The caller then renders the frame the normal way.
++ */
++bool RenderPostFiltered(SDL_Surface *surface);
++
++/** @brief Releases the post filter texture, e.g. before the renderer is destroyed. */
++void ResetPostFilter();
++
++} // namespace devilution
++
++#endif
+diff --git a/Source/options.cpp b/Source/options.cpp
+index a2900c0..a1ea0f7 100644
+--- a/Source/options.cpp
++++ b/Source/options.cpp
+@@ -771,6 +771,13 @@ GraphicsOptions::GraphicsOptions()
+               { ScalingQuality::AnisotropicFiltering, N_("Anisotropic") },
+           })
+     , integerScaling("Integer Scaling", OptionEntryFlags::CantChangeInGame | OptionEntryFlags::RecreateUI, N_("Integer Scaling"), N_("Scales the image using whole number pixel ratio."), false)
++    , postFilter("Post Filter", OptionEntryFlags::None, N_("Post Filter"), N_("Smooths the edges of pixel art in the final image before it is scaled to the screen. Costs CPU time. Only used when upscaling."), PostFilter::None,
++          {
++              { PostFilter::None, N_("None") },
++              { PostFilter::Scale2x, N_("Scale2x/EPX") },
++              { PostFilter::Mmpx, N_("MMPX") },
++          })
++    , postFilterFactor("Post Filter Factor", OptionEntryFlags::None, N_("Post Filter Factor"), N_("Magnification of the Scale2x/EPX post filter: 2 or 3 (Scale3x). MMPX always magnifies 2x."), 2, { 2, 3 })
+ #endif
+     , frameRateControl("Frame Rate Control",
+           OptionEntryFlags::RecreateUI
+@@ -821,6 +828,8 @@ std::vector<OptionEntryBase *> GraphicsOptions::GetEntries()
+ 		&upscale,
+ 		&scaleQuality,
+ 		&integerScaling,
++		&postFilter,
++		&postFilterFactor,
+ #endif
+ 		&frameRateControl,
+ 		&brightness,
+diff --git a/Source/options.h b/Source/options.h
+index 98b7d6b..c57d480 100644
+--- a/Source/options.h
++++ b/Source/options.h
+@@ -73,6 +73,12 @@ enum class ScalingQuality : uint8_t {
+ 	AnisotropicFiltering,
+ };
+ 
++enum class PostFilter : uint8_t {
++	None = 0,
++	Scale2x = 1,
++	Mmpx = 2,
++};
++
+ enum class FrameRateControl : uint8_t {
+ 	None = 0,
+ #ifndef USE_SDL1
+@@ -540,6 +546,10 @@ struct GraphicsOptions : OptionCategoryBase {
+ 	OptionEntryEnum<ScalingQuality> scaleQuality;
+ 	/** @brief Only scale by values divisible by the width and height. */
+ 	OptionEntryBoolean integerScaling;
++	/** @brief Pixel-art magnification filter applied to the final frame on the CPU before upscaling. */
++	OptionEntryEnum<PostFilter> postFilter;
++	/** @brief Magnification factor of the Scale2x/EPX post filter (MMPX is always 2x). */
++	OptionEntryInt<int> postFilterFactor;
+ #endif
+ 	/** @brief Limit frame rate either for vsync or CPU load. */
+ 	OptionEntryEnum<FrameRateControl> frameRateControl;
+diff --git a/Source/utils/display.cpp b/Source/utils/display.cpp
+index b57438f..2b0888d 100644
+--- a/Source/utils/display.cpp
++++ b/Source/utils/display.cpp
+@@ -46,6 +46,7 @@
+ #include "controls/touch/gamepad.h"
+ #include "engine/backbuffer_state.hpp"
+ #include "engine/dx.h"
++#include "engine/post_filter.hpp"
+ #include "headless_mode.hpp"
+ #include "options.h"
+ #include "utils/log.hpp"
+@@ -700,6 +701,7 @@ void ReinitializeTexture()
+ {
+ 	if (texture)
+ 		texture.reset();
++	ResetPostFilter();
+ 
+ 	if (renderer == nullptr)
+ 		return;
+@@ -757,6 +759,12 @@ void ReinitializeRenderer()
+ 	AdjustToScreenGeometry(Size(surface->w, surface->h));
+ #else
+ 
++	// The post filter runs on the renderer, which only exists with upscaling.
++	GraphicsOptions &graphicsOptions = GetOptions().Graphics;
++	const OptionEntryFlags postFilterVisibility = *graphicsOptions.upscale ? OptionEntryFlags::None : OptionEntryFlags::Invisible;
++	graphicsOptions.postFilter.flags = (graphicsOptions.postFilter.flags & ~OptionEntryFlags::Invisible) | postFilterVisibility;
++	graphicsOptions.postFilterFactor.flags = (graphicsOptions.postFilterFactor.flags & ~OptionEntryFlags::Invisible) | postFilterVisibility;
++
+ 	if (*GetOptions().Graphics.upscale) {
+ 		// We don't recreate the renderer, because this can result in a freezing (not refreshing) rendering
+ 		if (renderer == nullptr) {
+diff --git a/Source/utils/upscalers/mmpx.cpp b/Source/utils/upscalers/mmpx.cpp
+new file mode 100644
+index 0000000..0f90291
+--- /dev/null
++++ b/Source/utils/upscalers/mmpx.cpp
+@@ -0,0 +1,199 @@
++/**
++ * @file utils/upscalers/mmpx.cpp
++ *
++ * MMPX style-preserving pixel-art magnification (2x).
++ *
++ * Reference: Morgan McGuire and Mara Gagiu, "MMPX Style-Preserving Pixel-Art Magnification",
++ * Journal of Computer Graphics Techniques (JCGT), vol. 10, no. 2, 83-104, 2021.
++ * https://jcgt.org/published/0010/02/04/
++ * https://casual-effects.com/research/McGuire2021PixelArt/
++ *
++ * This is a port of the reference implementation, which carries the following notice:
++ *
++ *   Copyright 2020 Morgan McGuire & Mara Gagiu.
++ *   Available under the MIT license.
++ *
++ *   Permission is hereby granted, free of charge, to any person obtaining a copy of this software
++ *   and associated documentation files (the "Software"), to deal in the Software without
++ *   restriction, including without limitation the rights to use, copy, modify, merge, publish,
++ *   distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the
++ *   Software is furnished to do so, subject to the following conditions:
++ *
++ *   The above copyright notice and this permission notice shall be included in all copies or
++ *   substantial portions of the Software.
++ *
++ *   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING
++ *   BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
++ *   NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
++ *   DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++ *   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
++ *
++ * Differences from the reference: brightness ignores the top byte (our pixels are opaque XRGB),
++ * and pitched source/destination buffers are supported.
++ *
++ * Source neighbourhood (E is the current pixel), output pixels J K / L M:
++ *
++ *         P
++ *       A B C
++ *     Q D E F R
++ *       G H I
++ *         S
++ */
++#include <algorithm>
++
++#include "utils/upscalers/upscalers.hpp"
++
++namespace devilution {
++namespace upscalers {
++
++namespace {
++
++uint32_t Luma(uint32_t color)
++{
++	return ((color >> 16) & 0xFF) + ((color >> 8) & 0xFF) + (color & 0xFF);
++}
++
++bool AllEq2(uint32_t b, uint32_t a0, uint32_t a1)
++{
++	return ((b ^ a0) | (b ^ a1)) == 0;
++}
++
++bool AllEq3(uint32_t b, uint32_t a0, uint32_t a1, uint32_t a2)
++{
++	return ((b ^ a0) | (b ^ a1) | (b ^ a2)) == 0;
++}
++
++bool AllEq4(uint32_t b, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
++{
++	return ((b ^ a0) | (b ^ a1) | (b ^ a2) | (b ^ a3)) == 0;
++}
++
++bool AnyEq3(uint32_t b, uint32_t a0, uint32_t a1, uint32_t a2)
++{
++	return b == a0 || b == a1 || b == a2;
++}
++
++bool NoneEq2(uint32_t b, uint32_t a0, uint32_t a1)
++{
++	return b != a0 && b != a1;
++}
++
++bool NoneEq4(uint32_t b, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
++{
++	return b != a0 && b != a1 && b != a2 && b != a3;
++}
++
++/** @brief Reads source pixels within 3 rows of the current row, clamping coordinates to the image. */
++class ClampedSource {
++public:
++	explicit ClampedSource(const ConstImageView &src)
++	    : src_(src)
++	{
++	}
++
++	void SetRow(int y)
++	{
++		y_ = y;
++		for (int dy = -3; dy <= 3; ++dy) {
++			rows_[dy + 3] = src_.Row(std::clamp(y + dy, 0, src_.height - 1));
++		}
++	}
++
++	/** @brief The pixel at (`x`, `y`), where `y` is within 3 rows of the row passed to `SetRow`. */
++	[[nodiscard]] uint32_t operator()(int x, int y) const
++	{
++		return rows_[y - y_ + 3][std::clamp(x, 0, src_.width - 1)];
++	}
++
++private:
++	const ConstImageView &src_;
++	int y_ = 0;
++	const uint32_t *rows_[7] = {};
++};
++
++} // namespace
++
++void Mmpx2x(const ConstImageView &src, const ImageView &dst)
++{
++	ClampedSource at(src);
++	for (int y = 0; y < src.height; ++y) {
++		at.SetRow(y);
++		uint32_t *out0 = dst.Row(2 * y);
++		uint32_t *out1 = dst.Row(2 * y + 1);
++
++		// The 3x3 neighbourhood and Q, R slide along the row.
++		uint32_t a = at(-1, y - 1), b = at(0, y - 1), c = at(1, y - 1);
++		uint32_t q = at(-2, y), d = at(-1, y), e = at(0, y), f = at(1, y), r = at(2, y);
++		uint32_t g = at(-1, y + 1), h = at(0, y + 1), i = at(1, y + 1);
++
++		for (int x = 0; x < src.width; ++x) {
++			uint32_t j = e, k = e, l = e, m = e;
++
++			if (((a ^ e) | (b ^ e) | (c ^ e) | (d ^ e) | (f ^ e) | (g ^ e) | (h ^ e) | (i ^ e)) != 0) {
++				const uint32_t p = at(x, y - 2);
++				const uint32_t s = at(x, y + 2);
++				const uint32_t bl = Luma(b), dl = Luma(d), el = Luma(e), fl = Luma(f), hl = Luma(h);
++
++				// 1:1 slope rules
++				if ((d == b && d != h && d != f) && (el >= dl || e == a) && AnyEq3(e, a, c, g) && (el < dl || a != d || e != p || e != q)) j = d;
++				if ((b == f && b != d && b != h) && (el >= bl || e == c) && AnyEq3(e, a, c, i) && (el < bl || c != b || e != p || e != r)) k = b;
++				if ((h == d && h != f && h != b) && (el >= hl || e == g) && AnyEq3(e, a, g, i) && (el < hl || g != h || e != s || e != q)) l = h;
++				if ((f == h && f != b && f != d) && (el >= fl || e == i) && AnyEq3(e, c, g, i) && (el < fl || i != h || e != r || e != s)) m = f;
++
++				// Intersection rules
++				if ((e != f && AllEq4(e, c, i, d, q) && AllEq2(f, b, h)) && f != at(x + 3, y)) k = m = f;
++				if ((e != d && AllEq4(e, a, g, f, r) && AllEq2(d, b, h)) && d != at(x - 3, y)) j = l = d;
++				if ((e != h && AllEq4(e, g, i, b, p) && AllEq2(h, d, f)) && h != at(x, y + 3)) l = m = h;
++				if ((e != b && AllEq4(e, a, c, h, s) && AllEq2(b, d, f)) && b != at(x, y - 3)) j = k = b;
++
++				// Triangle tip rules
++				if (bl < el && AllEq4(e, g, h, i, s) && NoneEq4(e, a, d, c, f)) j = k = b;
++				if (hl < el && AllEq4(e, a, b, c, p) && NoneEq4(e, d, g, i, f)) l = m = h;
++				if (fl < el && AllEq4(e, a, d, g, q) && NoneEq4(e, b, c, i, h)) k = m = f;
++				if (dl < el && AllEq4(e, c, f, i, r) && NoneEq4(e, b, a, g, h)) j = l = d;
++
++				// 2:1 slope rules
++				if (h != b) {
++					if (h != a && h != e && h != c) {
++						if (AllEq3(h, g, f, r) && NoneEq2(h, d, at(x + 2, y - 1))) l = m;
++						if (AllEq3(h, i, d, q) && NoneEq2(h, f, at(x - 2, y - 1))) m = l;
++					}
++					if (b != i && b != g && b != e) {
++						if (AllEq3(b, a, f, r) && NoneEq2(b, d, at(x + 2, y + 1))) j = k;
++						if (AllEq3(b, c, d, q) && NoneEq2(b, f, at(x - 2, y + 1))) k = j;
++					}
++				}
++				if (f != d) {
++					if (d != i && d != e && d != c) {
++						if (AllEq3(d, a, h, s) && NoneEq2(d, b, at(x + 1, y + 2))) j = l;
++						if (AllEq3(d, g, b, p) && NoneEq2(d, h, at(x + 1, y - 2))) l = j;
++					}
++					if (f != e && f != a && f != g) {
++						if (AllEq3(f, c, h, s) && NoneEq2(f, b, at(x - 1, y + 2))) k = m;
++						if (AllEq3(f, i, b, p) && NoneEq2(f, h, at(x - 1, y - 2))) m = k;
++					}
++				}
++			}
++
++			out0[2 * x] = j;
++			out0[2 * x + 1] = k;
++			out1[2 * x] = l;
++			out1[2 * x + 1] = m;
++
++			a = b;
++			b = c;
++			c = at(x + 2, y - 1);
++			q = d;
++			d = e;
++			e = f;
++			f = r;
++			r = at(x + 3, y);
++			g = h;
++			h = i;
++			i = at(x + 2, y + 1);
++		}
++	}
++}
++
++} // namespace upscalers
++} // namespace devilution
+diff --git a/Source/utils/upscalers/scale2x.cpp b/Source/utils/upscalers/scale2x.cpp
+new file mode 100644
+index 0000000..1f34b3d
+--- /dev/null
++++ b/Source/utils/upscalers/scale2x.cpp
+@@ -0,0 +1,114 @@
++/**
++ * @file utils/upscalers/scale2x.cpp
++ *
++ * Scale2x (EPX / AdvMAME2x) and Scale3x (AdvMAME3x) magnification.
++ *
++ * Written from the published rules of the algorithms:
++ * - EPX: Eric Johnston, LucasArts, 1992.
++ * - Scale2x / Scale3x: Andrea Mazzoleni, https://www.scale2x.it/algorithm
++ *
++ * Source neighbourhood (E is the current pixel):
++ *
++ *     A B C
++ *     D E F
++ *     G H I
++ */
++#include "utils/upscalers/upscalers.hpp"
++
++namespace devilution {
++namespace upscalers {
++
++namespace {
++
++/** @brief Rows above, at and below `y`, clamped to the image. */
++struct RowTriple {
++	const uint32_t *above;
++	const uint32_t *row;
++	const uint32_t *below;
++};
++
++RowTriple GetRows(const ConstImageView &src, int y)
++{
++	return {
++		src.Row(y > 0 ? y - 1 : 0),
++		src.Row(y),
++		src.Row(y + 1 < src.height ? y + 1 : y),
++	};
++}
++
++} // namespace
++
++void Scale2x(const ConstImageView &src, const ImageView &dst)
++{
++	const int lastX = src.width - 1;
++	for (int y = 0; y < src.height; ++y) {
++		const RowTriple rows = GetRows(src, y);
++		uint32_t *out0 = dst.Row(2 * y);
++		uint32_t *out1 = dst.Row(2 * y + 1);
++		for (int x = 0; x < src.width; ++x) {
++			const int xl = x > 0 ? x - 1 : 0;
++			const int xr = x < lastX ? x + 1 : lastX;
++			const uint32_t b = rows.above[x];
++			const uint32_t d = rows.row[xl];
++			const uint32_t e = rows.row[x];
++			const uint32_t f = rows.row[xr];
++			const uint32_t h = rows.below[x];
++			if (b != h && d != f) {
++				out0[2 * x] = d == b ? d : e;
++				out0[2 * x + 1] = b == f ? f : e;
++				out1[2 * x] = d == h ? d : e;
++				out1[2 * x + 1] = h == f ? f : e;
++			} else {
++				out0[2 * x] = e;
++				out0[2 * x + 1] = e;
++				out1[2 * x] = e;
++				out1[2 * x + 1] = e;
++			}
++		}
++	}
++}
++
++void Scale3x(const ConstImageView &src, const ImageView &dst)
++{
++	const int lastX = src.width - 1;
++	for (int y = 0; y < src.height; ++y) {
++		const RowTriple rows = GetRows(src, y);
++		uint32_t *out0 = dst.Row(3 * y);
++		uint32_t *out1 = dst.Row(3 * y + 1);
++		uint32_t *out2 = dst.Row(3 * y + 2);
++		for (int x = 0; x < src.width; ++x) {
++			const int xl = x > 0 ? x - 1 : 0;
++			const int xr = x < lastX ? x + 1 : lastX;
++			const uint32_t a = rows.above[xl];
++			const uint32_t b = rows.above[x];
++			const uint32_t c = rows.above[xr];
++			const uint32_t d = rows.row[xl];
++			const uint32_t e = rows.row[x];
++			const uint32_t f = rows.row[xr];
++			const uint32_t g = rows.below[xl];
++			const uint32_t h = rows.below[x];
++			const uint32_t i = rows.below[xr];
++			uint32_t *o0 = out0 + 3 * x;
++			uint32_t *o1 = out1 + 3 * x;
++			uint32_t *o2 = out2 + 3 * x;
++			if (b != h && d != f) {
++				o0[0] = d == b ? d : e;
++				o0[1] = (d == b && e != c) || (b == f && e != a) ? b : e;
++				o0[2] = b == f ? f : e;
++				o1[0] = (d == b && e != g) || (d == h && e != a) ? d : e;
++				o1[1] = e;
++				o1[2] = (b == f && e != i) || (h == f && e != c) ? f : e;
++				o2[0] = d == h ? d : e;
++				o2[1] = (d == h && e != i) || (h == f && e != g) ? h : e;
++				o2[2] = h == f ? f : e;
++			} else {
++				o0[0] = o0[1] = o0[2] = e;
++				o1[0] = o1[1] = o1[2] = e;
++				o2[0] = o2[1] = o2[2] = e;
++			}
++		}
++	}
++}
++
++} // namespace upscalers
++} // namespace devilution
+diff --git a/Source/utils/upscalers/upscalers.hpp b/Source/utils/upscalers/upscalers.hpp
+new file mode 100644
+index 0000000..bdb3d8a
+--- /dev/null
++++ b/Source/utils/upscalers/upscalers.hpp
+@@ -0,0 +1,66 @@
++/**
++ * @file utils/upscalers/upscalers.hpp
++ *
++ * Pixel-art magnification filters for 32-bit pixels (e.g. RGB888 / XRGB8888).
++ *
++ * The filters only compare pixels for equality and (MMPX) by the brightness of their low 24 bits,
++ * so they work with any 32-bit pixel format whose color channels occupy the low 24 bits.
++ * Pixels outside the source image are treated as copies of the nearest edge pixel.
++ */
++#pragma once
++
++#include <cstddef>
++#include <cstdint>
++
++namespace devilution {
++namespace upscalers {
++
++/** @brief A read-only view of a 32-bit image. `pitch` is in pixels, not bytes. */
++struct ConstImageView {
++	const uint32_t *pixels;
++	int width;
++	int height;
++	ptrdiff_t pitch;
++
++	[[nodiscard]] const uint32_t *Row(int y) const
++	{
++		return pixels + y * pitch;
++	}
++};
++
++/** @brief A writable view of a 32-bit image. `pitch` is in pixels, not bytes. */
++struct ImageView {
++	uint32_t *pixels;
++	int width;
++	int height;
++	ptrdiff_t pitch;
++
++	[[nodiscard]] uint32_t *Row(int y) const
++	{
++		return pixels + y * pitch;
++	}
++};
++
++/**
++ * @brief Scale2x (EPX / AdvMAME2x) magnification.
++ *
++ * @param dst Must be exactly 2x the size of `src`.
++ */
++void Scale2x(const ConstImageView &src, const ImageView &dst);
++
++/**
++ * @brief Scale3x (AdvMAME3x) magnification, the 3x variant of Scale2x / EPX.
++ *
++ * @param dst Must be exactly 3x the size of `src`.
++ */
++void Scale3x(const ConstImageView &src, const ImageView &dst);
++
++/**
++ * @brief MMPX style-preserving pixel-art magnification (McGuire & Gagiu, 2021). 2x only.
++ *
++ * @param dst Must be exactly 2x the size of `src`.
++ */
++void Mmpx2x(const ConstImageView &src, const ImageView &dst);
++
++} // namespace upscalers
++} // namespace devilution
+diff --git a/Translations/ru.po b/Translations/ru.po
+index fbe3af6..616d5d6 100644
+--- a/Translations/ru.po
++++ b/Translations/ru.po
+@@ -4360,6 +4360,38 @@ msgstr ""
+ "Масштабирует изображение с использованием целочисленного соотношения "
+ "пикселей."
+ 
++#: Source/options.cpp:774
++msgid "Post Filter"
++msgstr "Пост-фильтр"
++
++#: Source/options.cpp:774
++msgid ""
++"Smooths the edges of pixel art in the final image before it is scaled to the "
++"screen. Costs CPU time. Only used when upscaling."
++msgstr ""
++"Сглаживает края пиксельной графики в итоговом кадре перед масштабированием "
++"на экран. Нагружает процессор. Работает только при масштабировании."
++
++#: Source/options.cpp:776
++msgid "Scale2x/EPX"
++msgstr "Scale2x/EPX"
++
++#: Source/options.cpp:777
++msgid "MMPX"
++msgstr "MMPX"
++
++#: Source/options.cpp:779
++msgid "Post Filter Factor"
++msgstr "Кратность пост-фильтра"
++
++#: Source/options.cpp:779
++msgid ""
++"Magnification of the Scale2x/EPX post filter: 2 or 3 (Scale3x). MMPX always "
++"magnifies 2x."
++msgstr ""
++"Кратность увеличения пост-фильтра Scale2x/EPX: 2 или 3 (Scale3x). MMPX "
++"всегда увеличивает в 2 раза."
++
+ #: Source/options.cpp:774
+ msgid "Frame Rate Control"
+ msgstr "Управление частотой кадров"
+diff --git a/test/upscalers_test.cpp b/test/upscalers_test.cpp
+new file mode 100644
+index 0000000..52f0ee8
+--- /dev/null
++++ b/test/upscalers_test.cpp
+@@ -0,0 +1,260 @@
++#include <cstddef>
++#include <cstdint>
++#include <vector>
++
++#include <gtest/gtest.h>
++
++#include "utils/upscalers/upscalers.hpp"
++
++namespace devilution {
++namespace upscalers {
++namespace {
++
++constexpr uint32_t Black = 0xFF000000;
++constexpr uint32_t White = 0xFFFFFFFF;
++constexpr uint32_t Red = 0xFFC02020;
++constexpr uint32_t Gold = 0xFFD0B040;
++
++struct Image {
++	int width;
++	int height;
++	ptrdiff_t pitch;
++	std::vector<uint32_t> pixels;
++
++	Image(int width, int height, ptrdiff_t padding = 0)
++	    : width(width)
++	    , height(height)
++	    , pitch(width + padding)
++	    , pixels(static_cast<size_t>(pitch * height), 0xDEADBEEF)
++	{
++	}
++
++	uint32_t &At(int x, int y)
++	{
++		return pixels[static_cast<size_t>(y * pitch + x)];
++	}
++
++	[[nodiscard]] uint32_t At(int x, int y) const
++	{
++		return pixels[static_cast<size_t>(y * pitch + x)];
++	}
++
++	[[nodiscard]] ConstImageView ConstView() const
++	{
++		return { pixels.data(), width, height, pitch };
++	}
++
++	[[nodiscard]] ImageView View()
++	{
++		return { pixels.data(), width, height, pitch };
++	}
++};
++
++/** @brief FNV-1a over the visible pixels (row padding excluded). */
++uint64_t Hash(const Image &image)
++{
++	uint64_t hash = 0xCBF29CE484222325ULL;
++	for (int y = 0; y < image.height; ++y) {
++		for (int x = 0; x < image.width; ++x) {
++			uint32_t pixel = image.At(x, y);
++			for (int i = 0; i < 4; ++i) {
++				hash ^= pixel & 0xFF;
++				hash *= 0x100000001B3ULL;
++				pixel >>= 8;
++			}
++		}
++	}
++	return hash;
++}
++
++/** @brief A deterministic image with a few colors in blocks, so that edges and flat areas both occur. */
++Image MakeBlocks(int width, int height, ptrdiff_t padding = 0)
++{
++	const uint32_t palette[] = { Black, White, Red, Gold };
++	Image image(width, height, padding);
++	uint32_t state = 12345;
++	for (int y = 0; y < height; ++y) {
++		for (int x = 0; x < width; ++x) {
++			state = state * 1103515245 + 12345;
++			// Mostly copy the left or upper neighbour to get runs and blobs.
++			const uint32_t choice = (state >> 16) % 8;
++			if (choice < 3 && x > 0) {
++				image.At(x, y) = image.At(x - 1, y);
++			} else if (choice < 6 && y > 0) {
++				image.At(x, y) = image.At(x, y - 1);
++			} else {
++				image.At(x, y) = palette[(state >> 24) % 4];
++			}
++		}
++	}
++	return image;
++}
++
++/** @brief An 8x8 image with a one-pixel diagonal line, a 2:1 slope and an isolated dot. */
++Image MakeLines8()
++{
++	Image image(8, 8);
++	for (int y = 0; y < 8; ++y) {
++		for (int x = 0; x < 8; ++x) {
++			image.At(x, y) = Black;
++		}
++	}
++	for (int i = 0; i < 6; ++i) {
++		image.At(i, i) = White;
++	}
++	for (int i = 0; i < 4; ++i) {
++		image.At(2 * i + 1, 7 - i) = Red;
++		image.At(2 * i, 7 - i) = Red;
++	}
++	image.At(6, 1) = Gold;
++	return image;
++}
++
++Image Apply(void (*filter)(const ConstImageView &, const ImageView &), int factor, const Image &src, ptrdiff_t dstPadding = 0)
++{
++	Image dst(src.width * factor, src.height * factor, dstPadding);
++	filter(src.ConstView(), dst.View());
++	return dst;
++}
++
++/** @brief Clamped access, as the filters see pixels beyond the edge. */
++uint32_t Clamped(const Image &image, int x, int y)
++{
++	x = x < 0 ? 0 : (x >= image.width ? image.width - 1 : x);
++	y = y < 0 ? 0 : (y >= image.height ? image.height - 1 : y);
++	return image.At(x, y);
++}
++
++/** @brief Scale2x as written in its original formulation, as an independent reference. */
++Image ReferenceScale2x(const Image &src)
++{
++	Image dst(src.width * 2, src.height * 2);
++	for (int y = 0; y < src.height; ++y) {
++		for (int x = 0; x < src.width; ++x) {
++			const uint32_t b = Clamped(src, x, y - 1);
++			const uint32_t d = Clamped(src, x - 1, y);
++			const uint32_t e = Clamped(src, x, y);
++			const uint32_t f = Clamped(src, x + 1, y);
++			const uint32_t h = Clamped(src, x, y + 1);
++			dst.At(2 * x, 2 * y) = (d == b && b != f && d != h) ? d : e;
++			dst.At(2 * x + 1, 2 * y) = (b == f && b != d && f != h) ? f : e;
++			dst.At(2 * x, 2 * y + 1) = (d == h && d != b && h != f) ? d : e;
++			dst.At(2 * x + 1, 2 * y + 1) = (h == f && d != h && b != f) ? f : e;
++		}
++	}
++	return dst;
++}
++
++void ExpectSamePixels(const Image &a, const Image &b)
++{
++	ASSERT_EQ(a.width, b.width);
++	ASSERT_EQ(a.height, b.height);
++	for (int y = 0; y < a.height; ++y) {
++		for (int x = 0; x < a.width; ++x) {
++			ASSERT_EQ(a.At(x, y), b.At(x, y)) << "at " << x << "," << y;
++		}
++	}
++}
++
++TEST(UpscalersTest, UniformImageStaysUniform)
++{
++	Image src(5, 3);
++	for (uint32_t &pixel : src.pixels)
++		pixel = Red;
++	for (const Image &dst : { Apply(Scale2x, 2, src), Apply(Scale3x, 3, src), Apply(Mmpx2x, 2, src) }) {
++		for (int y = 0; y < dst.height; ++y) {
++			for (int x = 0; x < dst.width; ++x) {
++				ASSERT_EQ(dst.At(x, y), Red);
++			}
++		}
++	}
++}
++
++TEST(UpscalersTest, SinglePixelImage)
++{
++	Image src(1, 1);
++	src.At(0, 0) = Gold;
++	EXPECT_EQ(Apply(Scale2x, 2, src).pixels, std::vector<uint32_t>(4, Gold));
++	EXPECT_EQ(Apply(Scale3x, 3, src).pixels, std::vector<uint32_t>(9, Gold));
++	EXPECT_EQ(Apply(Mmpx2x, 2, src).pixels, std::vector<uint32_t>(4, Gold));
++}
++
++TEST(UpscalersTest, Scale2xRoundsCorner)
++{
++	// The black corner pixel next to two white edges gets its outer quarter filled in.
++	//   W W
++	//   W B
++	Image src(2, 2);
++	src.At(0, 0) = White;
++	src.At(1, 0) = White;
++	src.At(0, 1) = White;
++	src.At(1, 1) = Black;
++	const Image dst = Apply(Scale2x, 2, src);
++	EXPECT_EQ(dst.At(2, 2), White);
++	EXPECT_EQ(dst.At(3, 2), Black);
++	EXPECT_EQ(dst.At(2, 3), Black);
++	EXPECT_EQ(dst.At(3, 3), Black);
++}
++
++TEST(UpscalersTest, Scale2xMatchesReference)
++{
++	for (const Image &src : { MakeLines8(), MakeBlocks(8, 8), MakeBlocks(64, 64), MakeBlocks(37, 11) }) {
++		ExpectSamePixels(Apply(Scale2x, 2, src), ReferenceScale2x(src));
++	}
++}
++
++TEST(UpscalersTest, Scale3xCenterIsSource)
++{
++	const Image src = MakeBlocks(64, 64);
++	const Image dst = Apply(Scale3x, 3, src);
++	for (int y = 0; y < src.height; ++y) {
++		for (int x = 0; x < src.width; ++x) {
++			ASSERT_EQ(dst.At(3 * x + 1, 3 * y + 1), src.At(x, y));
++		}
++	}
++}
++
++TEST(UpscalersTest, PitchIsRespected)
++{
++	const Image packed = MakeBlocks(64, 64);
++	Image padded(64, 64, /*padding=*/7);
++	for (int y = 0; y < 64; ++y) {
++		for (int x = 0; x < 64; ++x) {
++			padded.At(x, y) = packed.At(x, y);
++		}
++	}
++	ExpectSamePixels(Apply(Scale2x, 2, packed), Apply(Scale2x, 2, padded, /*dstPadding=*/5));
++	ExpectSamePixels(Apply(Scale3x, 3, packed), Apply(Scale3x, 3, padded, /*dstPadding=*/5));
++	ExpectSamePixels(Apply(Mmpx2x, 2, packed), Apply(Mmpx2x, 2, padded, /*dstPadding=*/5));
++
++	// Padding in the destination is not written to.
++	const Image dst = Apply(Mmpx2x, 2, padded, /*dstPadding=*/5);
++	for (int y = 0; y < dst.height; ++y) {
++		for (ptrdiff_t x = dst.width; x < dst.pitch; ++x) {
++			ASSERT_EQ(dst.pixels[static_cast<size_t>(y * dst.pitch + x)], 0xDEADBEEF);
++		}
++	}
++}
++
++// Golden hashes. MMPX was checked against the MIT reference implementation on random images.
++TEST(UpscalersTest, GoldenHashes8x8)
++{
++	const Image lines = MakeLines8();
++	EXPECT_EQ(Hash(lines), 0x0650E820A9E2F6ACULL);
++	EXPECT_EQ(Hash(Apply(Scale2x, 2, lines)), 0x1D9E8CDD89A97D34ULL);
++	EXPECT_EQ(Hash(Apply(Scale3x, 3, lines)), 0xFDC03B106CED6E64ULL);
++	EXPECT_EQ(Hash(Apply(Mmpx2x, 2, lines)), 0x9E101FE318B06B34ULL);
++}
++
++TEST(UpscalersTest, GoldenHashes64x64)
++{
++	const Image blocks = MakeBlocks(64, 64);
++	EXPECT_EQ(Hash(blocks), 0xC6778B6D633F2A05ULL);
++	EXPECT_EQ(Hash(Apply(Scale2x, 2, blocks)), 0xA7DF9D3D9695A88DULL);
++	EXPECT_EQ(Hash(Apply(Scale3x, 3, blocks)), 0x8ECB88A878CD5FB5ULL);
++	EXPECT_EQ(Hash(Apply(Mmpx2x, 2, blocks)), 0xEC31B8B7D7D76FECULL);
++}
++
++} // namespace
++} // namespace upscalers
++} // namespace devilution

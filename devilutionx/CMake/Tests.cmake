@@ -67,6 +67,7 @@ set(standalone_tests
   sheen_bidi_test
   static_vector_test
   str_cat_test
+  upscalers_test
   utf8_test
 )
 if(NOT USE_SDL1)
@@ -171,6 +172,7 @@ target_link_dependencies(random_test PRIVATE libdevilutionx_random)
 target_link_dependencies(resolution_list_test PRIVATE libdevilutionx_resolution_list)
 target_link_dependencies(static_vector_test PRIVATE libdevilutionx_random app_fatal_for_testing)
 target_link_dependencies(str_cat_test PRIVATE libdevilutionx_strings)
+target_link_dependencies(upscalers_test PRIVATE libdevilutionx_upscalers)
 if(DEVILUTIONX_SCREENSHOT_FORMAT STREQUAL DEVILUTIONX_SCREENSHOT_FORMAT_PNG AND NOT USE_SDL1)
   target_link_dependencies(text_render_integration_test
     PRIVATE

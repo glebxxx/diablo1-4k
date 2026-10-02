@@ -49,6 +49,11 @@ The licenses below were checked against the `LICENSE`/`COPYING` files of the dow
 - `assets/lua/inspect.lua`: [inspect.lua](https://github.com/kikito/inspect.lua) 3.1.0, MIT.
 - `Packaging/resources/`: license texts that upstream ships with its packages: SIL Open Font License 1.1 (Charis SIL), Creative Commons Attribution 4.0, zlib, and the SDL README.
 
+## Added by this fork
+
+- `Source/utils/upscalers/mmpx.cpp`: a port of the MMPX reference implementation by Morgan McGuire and Mara Gagiu ([paper](https://jcgt.org/published/0010/02/04/), [reference code](https://casual-effects.com/research/McGuire2021PixelArt/)), MIT. The copyright and permission notice are kept in the file header.
+- `Source/utils/upscalers/scale2x.cpp`: Scale2x/EPX and Scale3x, written in this fork from the published rules of the algorithms. No code from the GPL-licensed Scale2x project is used.
+
 ## Game data
 
 No Blizzard game data is included: no MPQ archives, art, audio or video. *Diablo* and *Hellfire* are trademarks of Blizzard Entertainment, Inc. This project is not affiliated with or endorsed by Blizzard Entertainment or the DevilutionX project.

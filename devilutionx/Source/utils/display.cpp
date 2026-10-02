@@ -46,6 +46,7 @@
 #include "controls/touch/gamepad.h"
 #include "engine/backbuffer_state.hpp"
 #include "engine/dx.h"
+#include "engine/post_filter.hpp"
 #include "headless_mode.hpp"
 #include "options.h"
 #include "utils/log.hpp"
@@ -700,6 +701,7 @@ void ReinitializeTexture()
 {
 	if (texture)
 		texture.reset();
+	ResetPostFilter();
 
 	if (renderer == nullptr)
 		return;
@@ -756,6 +758,12 @@ void ReinitializeRenderer()
 	}
 	AdjustToScreenGeometry(Size(surface->w, surface->h));
 #else
+
+	// The post filter runs on the renderer, which only exists with upscaling.
+	GraphicsOptions &graphicsOptions = GetOptions().Graphics;
+	const OptionEntryFlags postFilterVisibility = *graphicsOptions.upscale ? OptionEntryFlags::None : OptionEntryFlags::Invisible;
+	graphicsOptions.postFilter.flags = (graphicsOptions.postFilter.flags & ~OptionEntryFlags::Invisible) | postFilterVisibility;
+	graphicsOptions.postFilterFactor.flags = (graphicsOptions.postFilterFactor.flags & ~OptionEntryFlags::Invisible) | postFilterVisibility;
 
 	if (*GetOptions().Graphics.upscale) {
 		// We don't recreate the renderer, because this can result in a freezing (not refreshing) rendering

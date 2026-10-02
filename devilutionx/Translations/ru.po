@@ -4361,6 +4361,38 @@ msgstr ""
 "пикселей."
 
 #: Source/options.cpp:774
+msgid "Post Filter"
+msgstr "Пост-фильтр"
+
+#: Source/options.cpp:774
+msgid ""
+"Smooths the edges of pixel art in the final image before it is scaled to the "
+"screen. Costs CPU time. Only used when upscaling."
+msgstr ""
+"Сглаживает края пиксельной графики в итоговом кадре перед масштабированием "
+"на экран. Нагружает процессор. Работает только при масштабировании."
+
+#: Source/options.cpp:776
+msgid "Scale2x/EPX"
+msgstr "Scale2x/EPX"
+
+#: Source/options.cpp:777
+msgid "MMPX"
+msgstr "MMPX"
+
+#: Source/options.cpp:779
+msgid "Post Filter Factor"
+msgstr "Кратность пост-фильтра"
+
+#: Source/options.cpp:779
+msgid ""
+"Magnification of the Scale2x/EPX post filter: 2 or 3 (Scale3x). MMPX always "
+"magnifies 2x."
+msgstr ""
+"Кратность увеличения пост-фильтра Scale2x/EPX: 2 или 3 (Scale3x). MMPX "
+"всегда увеличивает в 2 раза."
+
+#: Source/options.cpp:774
 msgid "Frame Rate Control"
 msgstr "Управление частотой кадров"
 
