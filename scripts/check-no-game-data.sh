@@ -30,7 +30,8 @@ fi
 # 4. Unexpectedly large files (> 5 MB).
 while IFS= read -r f; do
 	[ -f "$f" ] || continue
-	size=$(stat -f %z "$f" 2>/dev/null || stat -c %s "$f")
+	# wc -c works on both macOS and GNU/Linux (GNU `stat -f` prints file-system info, not the file size).
+	size=$(wc -c <"$f" | tr -d ' ')
 	if [ "$size" -gt 5242880 ]; then
 		echo "ERROR: $f is larger than 5 MB ($size bytes); game data?" >&2
 		fail=1
