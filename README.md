@@ -33,7 +33,7 @@ You need to own the original game. No game assets are included.
 | Feature | Status |
 |---|---|
 | Native macOS build (CLT only, all deps vendored, no Homebrew) | ✅ works |
-| Retina / 5K resolution list with integer-scale hints (upstream bug #4348) | 🚧 in progress |
+| Retina / 5K resolution list with integer-scale hints (upstream bug #4348) | ✅ works (`patches/0001`) |
 | Run in dungeons (single-player) | 🚧 in progress |
 | Multi-level world zoom, with on-screen buttons on the side | 📝 designed |
 | UI scaling: the interface fills the screen | 📝 designed |

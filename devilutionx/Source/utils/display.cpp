@@ -49,6 +49,7 @@
 #include "headless_mode.hpp"
 #include "options.h"
 #include "utils/log.hpp"
+#include "utils/resolution_list.hpp"
 #include "utils/sdl_compat.h"
 #include "utils/sdl_geometry.h"
 #include "utils/sdl_wrap.h"
@@ -98,6 +99,30 @@ const Rectangle &GetUIRectangle()
 namespace {
 
 #ifndef USE_SDL1
+/**
+ * @brief Returns the size of the given display mode in output pixels (landscape) if the display has
+ * more than one pixel per window coordinate (HiDPI, e.g. macOS Retina), or an empty size otherwise.
+ *
+ * Display modes are reported in window coordinates but the renderer scales the game to the output
+ * in pixels, so on HiDPI displays resolutions and integer scaling factors must be computed in pixels.
+ * On SDL2, the pixel density is only known once the renderer exists.
+ */
+Size GetHiDpiOutputSize(const SDL_DisplayMode &mode)
+{
+#ifdef USE_SDL3
+	const float pixelDensity = mode.pixel_density;
+#else
+	const float pixelDensity = GetDpiScalingFactor();
+#endif
+	if (pixelDensity <= 1.0F)
+		return { 0, 0 };
+	int width = static_cast<int>(std::lround(mode.w * pixelDensity));
+	int height = static_cast<int>(std::lround(mode.h * pixelDensity));
+	if (width < height)
+		std::swap(width, height);
+	return { width, height };
+}
+
 void CalculatePreferredWindowSize(int &width, int &height)
 {
 	SDL_DisplayMode mode;
@@ -117,9 +142,13 @@ void CalculatePreferredWindowSize(int &width, int &height)
 	}
 
 	if (*GetOptions().Graphics.integerScaling) {
-		const int factor = std::min(mode.w / width, mode.h / height);
-		width = mode.w / factor;
-		height = mode.h / factor;
+		// Integer scaling applies to the output in pixels, which is larger than the desktop mode on HiDPI displays.
+		Size desktopSize = GetHiDpiOutputSize(mode);
+		if (desktopSize.width == 0)
+			desktopSize = { mode.w, mode.h };
+		const int factor = std::max(1, std::min(desktopSize.width / width, desktopSize.height / height));
+		width = desktopSize.width / factor;
+		height = desktopSize.height / factor;
 		return;
 	}
 
@@ -185,7 +214,8 @@ void UpdateAvailableResolutions()
 #endif
 	GraphicsOptions &graphicsOptions = GetOptions().Graphics;
 
-	std::vector<Size> sizes;
+	ResolutionListParams params;
+	std::vector<Size> &sizes = params.displayModes;
 	const float scaleFactor = GetDpiScalingFactor();
 
 	// Add resolutions
@@ -238,78 +268,33 @@ void UpdateAvailableResolutions()
 	}
 #endif
 
-	if (supportsAnyResolution && sizes.size() == 1) {
-		// Attempt to provide sensible options for 4:3 and the native aspect ratio
-		const int width = sizes[0].width;
-		const int height = sizes[0].height;
-		const int commonHeights[] = { 480, 540, 720, 960, 1080, 1440, 2160 };
-		for (const int commonHeight : commonHeights) {
-			if (commonHeight > height)
-				break;
-			sizes.emplace_back(commonHeight * 4 / 3, commonHeight);
-			if (commonHeight * width % height == 0)
-				sizes.emplace_back(commonHeight * width / height, commonHeight);
-		}
-	}
-
-	const Size configuredSize = *graphicsOptions.resolution;
-
-	// Ensures that the ini specified resolution is present in resolution list even if it doesn't match a monitor resolution (for example if played in window mode)
-	sizes.push_back(configuredSize);
-	// Ensures that the platform's preferred default resolution is always present
-	sizes.emplace_back(DEFAULT_WIDTH, DEFAULT_HEIGHT);
-	// Ensures that the vanilla Diablo resolution is present on systems that would support it
-	if (supportsAnyResolution)
-		sizes.emplace_back(640, 480);
+	params.configuredSize = *graphicsOptions.resolution;
+	params.defaultSize = { DEFAULT_WIDTH, DEFAULT_HEIGHT };
+	params.supportsAnyResolution = supportsAnyResolution;
+#ifdef __3DS__
+	params.removeSmallResolutions = false;
+#endif
 
 #ifndef USE_SDL1
-	if (*graphicsOptions.fitToScreen) {
+	params.fitToScreen = *graphicsOptions.fitToScreen;
+	if (params.fitToScreen || *graphicsOptions.upscale) {
 #ifdef USE_SDL3
-		const SDL_DisplayID displayId = SDL_GetDisplayForWindow(ghMainWnd);
-		if (displayId == 0) ErrSdl();
 		const SDL_DisplayMode *modePtr = SDL_GetDesktopDisplayMode(displayId);
-		if (modePtr == nullptr) ErrSdl();
-		const SDL_DisplayMode &mode = *modePtr;
 #else
-		SDL_DisplayMode mode;
-		if (SDL_GetDesktopDisplayMode(0, &mode) != 0) ErrSdl();
+		SDL_DisplayMode desktopMode;
+		const SDL_DisplayMode *modePtr = SDL_GetDesktopDisplayMode(0, &desktopMode) == 0 ? &desktopMode : nullptr;
 #endif
-		for (auto &size : sizes) {
-			if (mode.h == 0) continue;
-			// Ensure that the ini specified resolution remains present in the resolution list
-			if (size.height == configuredSize.height)
-				size.width = configuredSize.width;
-			else
-				size.width = size.height * mode.w / mode.h;
+		if (modePtr != nullptr) {
+			params.desktopSize = { modePtr->w, modePtr->h };
+			if (*graphicsOptions.upscale)
+				params.hiDpiOutputSize = GetHiDpiOutputSize(*modePtr);
+		} else if (params.fitToScreen) {
+			ErrSdl();
 		}
 	}
 #endif
 
-#ifndef __3DS__
-	// Only display compatible resolutions.
-	std::erase_if(sizes, [](const Size &s) { return s.width < 640 || s.height < 480; });
-#endif
-
-	// Sort by width then by height
-	c_sort(sizes, [](const Size &x, const Size &y) -> bool {
-		if (x.width == y.width)
-			return x.height > y.height;
-		return x.width > y.width;
-	});
-	// Remove duplicate entries
-	sizes.erase(std::unique(sizes.begin(), sizes.end()), sizes.end());
-
-	std::vector<std::pair<Size, std::string>> resolutions;
-	for (auto &size : sizes) {
-#ifndef USE_SDL1
-		if (*graphicsOptions.fitToScreen) {
-			resolutions.emplace_back(size, StrCat(size.height, "p"));
-			continue;
-		}
-#endif
-		resolutions.emplace_back(size, StrCat(size.width, "x", size.height));
-	}
-	graphicsOptions.resolution.setAvailableResolutions(std::move(resolutions));
+	graphicsOptions.resolution.setAvailableResolutions(BuildResolutionList(params));
 }
 
 #if !defined(USE_SDL1) || defined(__3DS__)
@@ -685,6 +670,22 @@ bool SpawnWindow(const char *lpWindowName)
 	refreshDelay = 1000000 / refreshRate;
 
 	ReinitializeRenderer();
+
+#if !defined(USE_SDL1) && !defined(USE_SDL3)
+	// On SDL2, the DPI scaling factor is only known once the renderer exists.
+	// On HiDPI displays, "Fit to Screen" with "Integer Scaling" depends on it,
+	// so apply the preferred size again. This does not recreate the renderer.
+	if (renderer != nullptr && *GetOptions().Graphics.fitToScreen && *GetOptions().Graphics.integerScaling
+	    && GetDpiScalingFactor() > 1.0F) {
+		const Size currentSize { gnScreenWidth, gnScreenHeight };
+		const Size preferredSize = GetPreferredWindowSize();
+		if (preferredSize != currentSize) {
+			if (!*GetOptions().Graphics.fullscreen)
+				SDL_SetWindowSize(ghMainWnd, preferredSize.width, preferredSize.height);
+			ReinitializeRenderer();
+		}
+	}
+#endif
 
 	if (ghMainWnd != nullptr) {
 		UpdateAvailableResolutions();

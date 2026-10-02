@@ -21,3 +21,11 @@ Every user-visible change made in this fork is listed below.
   - `Source/` is never pruned: platform code there is behind `#ifdef`, and our patches must keep applying to pristine upstream sources.
   - `LICENSE.md`, upstream's `README.md` and `Packaging/resources/` (third-party license texts) are kept.
 - **`Packaging/resources/shareware-startup.wav`**: audio from the Diablo shareware release (Blizzard). Upstream uses it only for the Nintendo 3DS banner. We do not carry it.
+
+### Engine changes (`patches/`)
+
+- **`0001-hidpi-resolution-list.patch` — HiDPI/Retina resolution list** (fixes upstream issue [#4348](https://github.com/diasurgical/DevilutionX/issues/4348)).
+  - On HiDPI displays (macOS Retina) with upscaling on, the *Settings → Graphics → Resolution* list was built from display modes multiplied by the pixel density. Entries came out doubled: on a 5K iMac the list ran up to "5760p", which rendered at 10240×5760 and showed a tiny picture.
+  - The list is now built from the desktop size in output pixels: exact integer fractions of it, plus common heights at its aspect ratio. Nothing larger than the screen is offered, except the resolution already set in `diablo.ini`, which stays in the list so it remains selected. Entries that scale to the screen exactly carry their factor, e.g. `1920x1080 (x3)`, or `1080p (x3)` with *Fit to Screen*.
+  - *Fit to Screen* together with *Integer Scaling* now computes the scale factor in output pixels instead of points. On SDL2 the pixel density is only known once the renderer exists, so the preferred window size is applied again at that point (the renderer is not recreated).
+  - The list logic moved into a pure function, `BuildResolutionList` (`Source/utils/resolution_list.{hpp,cpp}`), covered by `test/resolution_list_test.cpp`. Non-HiDPI displays get the same list as before.

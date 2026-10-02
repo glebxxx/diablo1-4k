@@ -782,6 +782,13 @@ add_devilutionx_object_library(libdevilutionx_random
   engine/random.cpp
 )
 
+add_devilutionx_object_library(libdevilutionx_resolution_list
+  utils/resolution_list.cpp
+)
+target_link_dependencies(libdevilutionx_resolution_list PUBLIC
+  libdevilutionx_strings
+)
+
 add_devilutionx_object_library(libdevilutionx_quick_messages
   quick_messages.cpp
 )
@@ -1101,6 +1108,7 @@ target_link_dependencies(libdevilutionx PUBLIC
   libdevilutionx_quests
   libdevilutionx_quick_messages
   libdevilutionx_random
+  libdevilutionx_resolution_list
   libdevilutionx_sound
   libdevilutionx_spells
   libdevilutionx_stores

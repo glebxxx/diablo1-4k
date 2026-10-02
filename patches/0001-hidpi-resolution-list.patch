@@ -1,0 +1,816 @@
+diff --git a/CMake/Tests.cmake b/CMake/Tests.cmake
+index 4542cd10a..b6ea2d6fc 100644
+--- a/CMake/Tests.cmake
++++ b/CMake/Tests.cmake
+@@ -63,6 +63,7 @@ set(standalone_tests
+   vision_test
+   random_test
+   rectangle_test
++  resolution_list_test
+   sheen_bidi_test
+   static_vector_test
+   str_cat_test
+@@ -167,6 +168,7 @@ target_link_dependencies(path_test PRIVATE libdevilutionx_pathfinding libdevilut
+ target_link_dependencies(vision_test PRIVATE libdevilutionx_vision)
+ target_link_dependencies(path_benchmark PRIVATE libdevilutionx_pathfinding app_fatal_for_testing)
+ target_link_dependencies(random_test PRIVATE libdevilutionx_random)
++target_link_dependencies(resolution_list_test PRIVATE libdevilutionx_resolution_list)
+ target_link_dependencies(static_vector_test PRIVATE libdevilutionx_random app_fatal_for_testing)
+ target_link_dependencies(str_cat_test PRIVATE libdevilutionx_strings)
+ if(DEVILUTIONX_SCREENSHOT_FORMAT STREQUAL DEVILUTIONX_SCREENSHOT_FORMAT_PNG AND NOT USE_SDL1)
+diff --git a/Source/CMakeLists.txt b/Source/CMakeLists.txt
+index 1dc992602..cd6c8cdbd 100644
+--- a/Source/CMakeLists.txt
++++ b/Source/CMakeLists.txt
+@@ -782,6 +782,13 @@ add_devilutionx_object_library(libdevilutionx_random
+   engine/random.cpp
+ )
+ 
++add_devilutionx_object_library(libdevilutionx_resolution_list
++  utils/resolution_list.cpp
++)
++target_link_dependencies(libdevilutionx_resolution_list PUBLIC
++  libdevilutionx_strings
++)
++
+ add_devilutionx_object_library(libdevilutionx_quick_messages
+   quick_messages.cpp
+ )
+@@ -1101,6 +1108,7 @@ target_link_dependencies(libdevilutionx PUBLIC
+   libdevilutionx_quests
+   libdevilutionx_quick_messages
+   libdevilutionx_random
++  libdevilutionx_resolution_list
+   libdevilutionx_sound
+   libdevilutionx_spells
+   libdevilutionx_stores
+diff --git a/Source/utils/display.cpp b/Source/utils/display.cpp
+index 983a5d7e3..b57438f46 100644
+--- a/Source/utils/display.cpp
++++ b/Source/utils/display.cpp
+@@ -49,6 +49,7 @@
+ #include "headless_mode.hpp"
+ #include "options.h"
+ #include "utils/log.hpp"
++#include "utils/resolution_list.hpp"
+ #include "utils/sdl_compat.h"
+ #include "utils/sdl_geometry.h"
+ #include "utils/sdl_wrap.h"
+@@ -98,6 +99,30 @@ const Rectangle &GetUIRectangle()
+ namespace {
+ 
+ #ifndef USE_SDL1
++/**
++ * @brief Returns the size of the given display mode in output pixels (landscape) if the display has
++ * more than one pixel per window coordinate (HiDPI, e.g. macOS Retina), or an empty size otherwise.
++ *
++ * Display modes are reported in window coordinates but the renderer scales the game to the output
++ * in pixels, so on HiDPI displays resolutions and integer scaling factors must be computed in pixels.
++ * On SDL2, the pixel density is only known once the renderer exists.
++ */
++Size GetHiDpiOutputSize(const SDL_DisplayMode &mode)
++{
++#ifdef USE_SDL3
++	const float pixelDensity = mode.pixel_density;
++#else
++	const float pixelDensity = GetDpiScalingFactor();
++#endif
++	if (pixelDensity <= 1.0F)
++		return { 0, 0 };
++	int width = static_cast<int>(std::lround(mode.w * pixelDensity));
++	int height = static_cast<int>(std::lround(mode.h * pixelDensity));
++	if (width < height)
++		std::swap(width, height);
++	return { width, height };
++}
++
+ void CalculatePreferredWindowSize(int &width, int &height)
+ {
+ 	SDL_DisplayMode mode;
+@@ -117,9 +142,13 @@ void CalculatePreferredWindowSize(int &width, int &height)
+ 	}
+ 
+ 	if (*GetOptions().Graphics.integerScaling) {
+-		const int factor = std::min(mode.w / width, mode.h / height);
+-		width = mode.w / factor;
+-		height = mode.h / factor;
++		// Integer scaling applies to the output in pixels, which is larger than the desktop mode on HiDPI displays.
++		Size desktopSize = GetHiDpiOutputSize(mode);
++		if (desktopSize.width == 0)
++			desktopSize = { mode.w, mode.h };
++		const int factor = std::max(1, std::min(desktopSize.width / width, desktopSize.height / height));
++		width = desktopSize.width / factor;
++		height = desktopSize.height / factor;
+ 		return;
+ 	}
+ 
+@@ -185,7 +214,8 @@ void UpdateAvailableResolutions()
+ #endif
+ 	GraphicsOptions &graphicsOptions = GetOptions().Graphics;
+ 
+-	std::vector<Size> sizes;
++	ResolutionListParams params;
++	std::vector<Size> &sizes = params.displayModes;
+ 	const float scaleFactor = GetDpiScalingFactor();
+ 
+ 	// Add resolutions
+@@ -238,78 +268,33 @@ void UpdateAvailableResolutions()
+ 	}
+ #endif
+ 
+-	if (supportsAnyResolution && sizes.size() == 1) {
+-		// Attempt to provide sensible options for 4:3 and the native aspect ratio
+-		const int width = sizes[0].width;
+-		const int height = sizes[0].height;
+-		const int commonHeights[] = { 480, 540, 720, 960, 1080, 1440, 2160 };
+-		for (const int commonHeight : commonHeights) {
+-			if (commonHeight > height)
+-				break;
+-			sizes.emplace_back(commonHeight * 4 / 3, commonHeight);
+-			if (commonHeight * width % height == 0)
+-				sizes.emplace_back(commonHeight * width / height, commonHeight);
+-		}
+-	}
+-
+-	const Size configuredSize = *graphicsOptions.resolution;
+-
+-	// Ensures that the ini specified resolution is present in resolution list even if it doesn't match a monitor resolution (for example if played in window mode)
+-	sizes.push_back(configuredSize);
+-	// Ensures that the platform's preferred default resolution is always present
+-	sizes.emplace_back(DEFAULT_WIDTH, DEFAULT_HEIGHT);
+-	// Ensures that the vanilla Diablo resolution is present on systems that would support it
+-	if (supportsAnyResolution)
+-		sizes.emplace_back(640, 480);
++	params.configuredSize = *graphicsOptions.resolution;
++	params.defaultSize = { DEFAULT_WIDTH, DEFAULT_HEIGHT };
++	params.supportsAnyResolution = supportsAnyResolution;
++#ifdef __3DS__
++	params.removeSmallResolutions = false;
++#endif
+ 
+ #ifndef USE_SDL1
+-	if (*graphicsOptions.fitToScreen) {
++	params.fitToScreen = *graphicsOptions.fitToScreen;
++	if (params.fitToScreen || *graphicsOptions.upscale) {
+ #ifdef USE_SDL3
+-		const SDL_DisplayID displayId = SDL_GetDisplayForWindow(ghMainWnd);
+-		if (displayId == 0) ErrSdl();
+ 		const SDL_DisplayMode *modePtr = SDL_GetDesktopDisplayMode(displayId);
+-		if (modePtr == nullptr) ErrSdl();
+-		const SDL_DisplayMode &mode = *modePtr;
+ #else
+-		SDL_DisplayMode mode;
+-		if (SDL_GetDesktopDisplayMode(0, &mode) != 0) ErrSdl();
+-#endif
+-		for (auto &size : sizes) {
+-			if (mode.h == 0) continue;
+-			// Ensure that the ini specified resolution remains present in the resolution list
+-			if (size.height == configuredSize.height)
+-				size.width = configuredSize.width;
+-			else
+-				size.width = size.height * mode.w / mode.h;
++		SDL_DisplayMode desktopMode;
++		const SDL_DisplayMode *modePtr = SDL_GetDesktopDisplayMode(0, &desktopMode) == 0 ? &desktopMode : nullptr;
++#endif
++		if (modePtr != nullptr) {
++			params.desktopSize = { modePtr->w, modePtr->h };
++			if (*graphicsOptions.upscale)
++				params.hiDpiOutputSize = GetHiDpiOutputSize(*modePtr);
++		} else if (params.fitToScreen) {
++			ErrSdl();
+ 		}
+ 	}
+ #endif
+ 
+-#ifndef __3DS__
+-	// Only display compatible resolutions.
+-	std::erase_if(sizes, [](const Size &s) { return s.width < 640 || s.height < 480; });
+-#endif
+-
+-	// Sort by width then by height
+-	c_sort(sizes, [](const Size &x, const Size &y) -> bool {
+-		if (x.width == y.width)
+-			return x.height > y.height;
+-		return x.width > y.width;
+-	});
+-	// Remove duplicate entries
+-	sizes.erase(std::unique(sizes.begin(), sizes.end()), sizes.end());
+-
+-	std::vector<std::pair<Size, std::string>> resolutions;
+-	for (auto &size : sizes) {
+-#ifndef USE_SDL1
+-		if (*graphicsOptions.fitToScreen) {
+-			resolutions.emplace_back(size, StrCat(size.height, "p"));
+-			continue;
+-		}
+-#endif
+-		resolutions.emplace_back(size, StrCat(size.width, "x", size.height));
+-	}
+-	graphicsOptions.resolution.setAvailableResolutions(std::move(resolutions));
++	graphicsOptions.resolution.setAvailableResolutions(BuildResolutionList(params));
+ }
+ 
+ #if !defined(USE_SDL1) || defined(__3DS__)
+@@ -686,6 +671,22 @@ bool SpawnWindow(const char *lpWindowName)
+ 
+ 	ReinitializeRenderer();
+ 
++#if !defined(USE_SDL1) && !defined(USE_SDL3)
++	// On SDL2, the DPI scaling factor is only known once the renderer exists.
++	// On HiDPI displays, "Fit to Screen" with "Integer Scaling" depends on it,
++	// so apply the preferred size again. This does not recreate the renderer.
++	if (renderer != nullptr && *GetOptions().Graphics.fitToScreen && *GetOptions().Graphics.integerScaling
++	    && GetDpiScalingFactor() > 1.0F) {
++		const Size currentSize { gnScreenWidth, gnScreenHeight };
++		const Size preferredSize = GetPreferredWindowSize();
++		if (preferredSize != currentSize) {
++			if (!*GetOptions().Graphics.fullscreen)
++				SDL_SetWindowSize(ghMainWnd, preferredSize.width, preferredSize.height);
++			ReinitializeRenderer();
++		}
++	}
++#endif
++
+ 	if (ghMainWnd != nullptr) {
+ 		UpdateAvailableResolutions();
+ 		return true;
+diff --git a/Source/utils/resolution_list.cpp b/Source/utils/resolution_list.cpp
+new file mode 100644
+index 000000000..d22a3d2e3
+--- /dev/null
++++ b/Source/utils/resolution_list.cpp
+@@ -0,0 +1,136 @@
++#include "utils/resolution_list.hpp"
++
++#include <algorithm>
++
++#include "utils/algorithm/container.hpp"
++#include "utils/str_cat.hpp"
++
++namespace devilution {
++
++namespace {
++
++/**
++ * @brief Adds resolutions suited to a HiDPI output of the given size (in pixels).
++ */
++void AddHiDpiResolutions(Size output, bool fitToScreen, std::vector<Size> &sizes)
++{
++	// Exact integer fractions of the output are scaled pixel-perfectly (also with "Integer Scaling").
++	for (int factor = 1; output.height / factor >= 480; ++factor) {
++		if (output.width % factor == 0 && output.height % factor == 0)
++			sizes.emplace_back(output.width / factor, output.height / factor);
++	}
++
++	// Common heights at the output's aspect ratio.
++	// Without "Fit to Screen", only if the width is a whole number, so that the aspect ratio is exact.
++	constexpr int CommonHeights[] = { 480, 540, 720, 1080, 1440, 2160, 2880 };
++	for (const int height : CommonHeights) {
++		if (height > output.height)
++			break;
++		if (!fitToScreen && height * output.width % output.height != 0)
++			continue;
++		sizes.emplace_back(height * output.width / output.height, height);
++	}
++}
++
++/**
++ * @brief Returns `n` if `size` scaled by `n` is exactly `output`, or 0 otherwise.
++ */
++int GetExactScale(Size size, Size output)
++{
++	if (size.width <= 0 || size.height <= 0)
++		return 0;
++	if (output.width % size.width != 0 || output.height % size.height != 0)
++		return 0;
++	const int scale = output.width / size.width;
++	return output.height / size.height == scale ? scale : 0;
++}
++
++} // namespace
++
++std::vector<std::pair<Size, std::string>> BuildResolutionList(const ResolutionListParams &params)
++{
++	const Size output = params.hiDpiOutputSize;
++	const bool isHiDpi = output.width > 0 && output.height > 0;
++
++	std::vector<Size> sizes;
++	if (isHiDpi) {
++		// Display modes are in window coordinates and may each have a different pixel density,
++		// so they do not describe what the game is scaled to. Use the output size in pixels instead.
++		AddHiDpiResolutions(output, params.fitToScreen, sizes);
++	} else {
++		sizes = params.displayModes;
++		if (params.supportsAnyResolution && sizes.size() == 1) {
++			// Attempt to provide sensible options for 4:3 and the native aspect ratio
++			const int width = sizes[0].width;
++			const int height = sizes[0].height;
++			const int commonHeights[] = { 480, 540, 720, 960, 1080, 1440, 2160 };
++			for (const int commonHeight : commonHeights) {
++				if (commonHeight > height)
++					break;
++				sizes.emplace_back(commonHeight * 4 / 3, commonHeight);
++				if (commonHeight * width % height == 0)
++					sizes.emplace_back(commonHeight * width / height, commonHeight);
++			}
++		}
++	}
++
++	const Size configuredSize = params.configuredSize;
++
++	// Ensures that the ini specified resolution is present in resolution list even if it doesn't match a monitor resolution (for example if played in window mode)
++	sizes.push_back(configuredSize);
++	// Ensures that the platform's preferred default resolution is always present
++	sizes.push_back(params.defaultSize);
++	// Ensures that the vanilla Diablo resolution is present on systems that would support it
++	if (params.supportsAnyResolution)
++		sizes.emplace_back(640, 480);
++
++	// On HiDPI displays, the output has the aspect ratio of the desktop but is always in landscape orientation,
++	// like the preferred window size.
++	const Size fitToScreenAspect = isHiDpi ? output : params.desktopSize;
++	if (params.fitToScreen && fitToScreenAspect.height != 0) {
++		for (auto &size : sizes) {
++			// Ensure that the ini specified resolution remains present in the resolution list
++			if (size.height == configuredSize.height)
++				size.width = configuredSize.width;
++			else
++				size.width = size.height * fitToScreenAspect.width / fitToScreenAspect.height;
++		}
++	}
++
++	if (isHiDpi) {
++		// Larger resolutions than the output only make everything smaller and slower.
++		// The configured resolution is kept so that it remains selected.
++		std::erase_if(sizes, [&](const Size &s) {
++			return s != configuredSize && (s.width > output.width || s.height > output.height);
++		});
++	}
++
++	if (params.removeSmallResolutions) {
++		// Only display compatible resolutions.
++		std::erase_if(sizes, [](const Size &s) { return s.width < 640 || s.height < 480; });
++	}
++
++	// Sort by width then by height
++	c_sort(sizes, [](const Size &x, const Size &y) -> bool {
++		if (x.width == y.width)
++			return x.height > y.height;
++		return x.width > y.width;
++	});
++	// Remove duplicate entries
++	sizes.erase(std::unique(sizes.begin(), sizes.end()), sizes.end());
++
++	std::vector<std::pair<Size, std::string>> resolutions;
++	resolutions.reserve(sizes.size());
++	for (const Size &size : sizes) {
++		std::string label = params.fitToScreen ? StrCat(size.height, "p") : StrCat(size.width, "x", size.height);
++		if (isHiDpi) {
++			const int scale = GetExactScale(size, output);
++			if (scale != 0)
++				StrAppend(label, " (x", scale, ")");
++		}
++		resolutions.emplace_back(size, std::move(label));
++	}
++	return resolutions;
++}
++
++} // namespace devilution
+diff --git a/Source/utils/resolution_list.hpp b/Source/utils/resolution_list.hpp
+new file mode 100644
+index 000000000..7d5a93ed1
+--- /dev/null
++++ b/Source/utils/resolution_list.hpp
+@@ -0,0 +1,58 @@
++#pragma once
++
++#include <string>
++#include <utility>
++#include <vector>
++
++#include "engine/size.hpp"
++
++namespace devilution {
++
++struct ResolutionListParams {
++	/**
++	 * @brief Display modes in landscape orientation, multiplied by the DPI scaling factor.
++	 *
++	 * Ignored when `hiDpiOutputSize` is set.
++	 */
++	std::vector<Size> displayModes;
++
++	/** @brief The resolution from the ini file. Always included, so that it remains selected. */
++	Size configuredSize { 0, 0 };
++
++	/** @brief The platform's preferred default resolution. */
++	Size defaultSize { 0, 0 };
++
++	/**
++	 * @brief The desktop display mode as reported by SDL (in window coordinates).
++	 *
++	 * Only used with `fitToScreen` when `hiDpiOutputSize` is empty. Empty if unknown.
++	 */
++	Size desktopSize { 0, 0 };
++
++	/**
++	 * @brief The desktop size in output pixels (landscape) if the display has more than one pixel
++	 * per window coordinate (HiDPI, e.g. macOS Retina) and the game is upscaled. Empty otherwise.
++	 *
++	 * When set, the list is built from exact integer fractions of this size and common heights at
++	 * its aspect ratio instead of from `displayModes`, entries larger than it are not offered, and
++	 * entries that scale to it exactly are labelled with their scale factor, e.g. "1080p (x3)".
++	 */
++	Size hiDpiOutputSize { 0, 0 };
++
++	/** @brief Whether the platform can display any resolution (e.g. by upscaling). */
++	bool supportsAnyResolution = false;
++
++	/** @brief "Fit to Screen": widths follow the desktop aspect ratio and entries are labelled by height. */
++	bool fitToScreen = false;
++
++	/** @brief Whether to remove resolutions smaller than 640x480. */
++	bool removeSmallResolutions = true;
++};
++
++/**
++ * @brief Returns the resolutions to offer in the settings menu, sorted from largest to smallest,
++ * together with their labels.
++ */
++std::vector<std::pair<Size, std::string>> BuildResolutionList(const ResolutionListParams &params);
++
++} // namespace devilution
+diff --git a/test/resolution_list_test.cpp b/test/resolution_list_test.cpp
+new file mode 100644
+index 000000000..a827d5a4f
+--- /dev/null
++++ b/test/resolution_list_test.cpp
+@@ -0,0 +1,368 @@
++#include <algorithm>
++#include <string>
++#include <utility>
++#include <vector>
++
++#include <gtest/gtest.h>
++
++#include "engine/size.hpp"
++#include "utils/resolution_list.hpp"
++#include "utils/str_cat.hpp"
++
++namespace devilution {
++namespace {
++
++using ResolutionList = std::vector<std::pair<Size, std::string>>;
++
++/**
++ * @brief The resolution list algorithm of `UpdateAvailableResolutions` before HiDPI support,
++ * ported verbatim (minus the SDL calls) as a reference.
++ *
++ * @param sizes Display modes, already multiplied by the DPI scaling factor.
++ * @param desktopMode The desktop display mode as reported by SDL (only used with `fitToScreen`).
++ */
++ResolutionList ReferenceResolutionList(std::vector<Size> sizes, Size configuredSize, Size defaultSize,
++    bool supportsAnyResolution, bool fitToScreen, Size desktopMode, bool removeSmallResolutions = true)
++{
++	if (supportsAnyResolution && sizes.size() == 1) {
++		// Attempt to provide sensible options for 4:3 and the native aspect ratio
++		const int width = sizes[0].width;
++		const int height = sizes[0].height;
++		const int commonHeights[] = { 480, 540, 720, 960, 1080, 1440, 2160 };
++		for (const int commonHeight : commonHeights) {
++			if (commonHeight > height)
++				break;
++			sizes.emplace_back(commonHeight * 4 / 3, commonHeight);
++			if (commonHeight * width % height == 0)
++				sizes.emplace_back(commonHeight * width / height, commonHeight);
++		}
++	}
++
++	// Ensures that the ini specified resolution is present in resolution list even if it doesn't match a monitor resolution (for example if played in window mode)
++	sizes.push_back(configuredSize);
++	// Ensures that the platform's preferred default resolution is always present
++	sizes.push_back(defaultSize);
++	// Ensures that the vanilla Diablo resolution is present on systems that would support it
++	if (supportsAnyResolution)
++		sizes.emplace_back(640, 480);
++
++	if (fitToScreen) {
++		for (auto &size : sizes) {
++			if (desktopMode.height == 0) continue;
++			// Ensure that the ini specified resolution remains present in the resolution list
++			if (size.height == configuredSize.height)
++				size.width = configuredSize.width;
++			else
++				size.width = size.height * desktopMode.width / desktopMode.height;
++		}
++	}
++
++	if (removeSmallResolutions) {
++		// Only display compatible resolutions.
++		sizes.erase(std::remove_if(sizes.begin(), sizes.end(), [](const Size &s) { return s.width < 640 || s.height < 480; }), sizes.end());
++	}
++
++	// Sort by width then by height
++	std::sort(sizes.begin(), sizes.end(), [](const Size &x, const Size &y) -> bool {
++		if (x.width == y.width)
++			return x.height > y.height;
++		return x.width > y.width;
++	});
++	// Remove duplicate entries
++	sizes.erase(std::unique(sizes.begin(), sizes.end()), sizes.end());
++
++	ResolutionList resolutions;
++	for (auto &size : sizes) {
++		if (fitToScreen) {
++			resolutions.emplace_back(size, StrCat(size.height, "p"));
++			continue;
++		}
++		resolutions.emplace_back(size, StrCat(size.width, "x", size.height));
++	}
++	return resolutions;
++}
++
++std::vector<std::string> Labels(const ResolutionList &list)
++{
++	std::vector<std::string> labels;
++	labels.reserve(list.size());
++	for (const auto &[size, label] : list)
++		labels.push_back(label);
++	return labels;
++}
++
++std::vector<Size> Sizes(const ResolutionList &list)
++{
++	std::vector<Size> sizes;
++	sizes.reserve(list.size());
++	for (const auto &[size, label] : list)
++		sizes.push_back(size);
++	return sizes;
++}
++
++ResolutionListParams HiDpiParams(Size output, Size desktop, Size configured, bool fitToScreen)
++{
++	ResolutionListParams params;
++	// Display modes as upstream collects them on a Retina display: in window coordinates multiplied by
++	// the DPI scaling factor. They must be ignored on HiDPI displays.
++	for (const Size mode : { Size { 2880, 1620 }, Size { 2560, 1440 }, Size { 1920, 1080 }, Size { 1280, 720 }, Size { 640, 480 } })
++		params.displayModes.emplace_back(mode.width * 2, mode.height * 2);
++	params.configuredSize = configured;
++	params.defaultSize = { 640, 480 };
++	params.desktopSize = desktop;
++	params.hiDpiOutputSize = output;
++	params.supportsAnyResolution = true;
++	params.fitToScreen = fitToScreen;
++	return params;
++}
++
++// iMac Pro 27" Retina 5K at "looks like 2880x1620" (the maximum scaled mode): 5760x3240 pixels.
++TEST(ResolutionListTest, HiDpi5760x3240)
++{
++	const ResolutionList list = BuildResolutionList(HiDpiParams({ 5760, 3240 }, { 2880, 1620 }, { 3840, 2160 }, /*fitToScreen=*/false));
++	EXPECT_EQ(Labels(list), (std::vector<std::string> {
++	                            "5760x3240 (x1)",
++	                            "5120x2880",
++	                            "3840x2160",
++	                            "2880x1620 (x2)",
++	                            "2560x1440",
++	                            "1920x1080 (x3)",
++	                            "1440x810 (x4)",
++	                            "1280x720",
++	                            "1152x648 (x5)",
++	                            "960x540 (x6)",
++	                            "640x480",
++	                        }));
++}
++
++TEST(ResolutionListTest, HiDpi5760x3240FitToScreen)
++{
++	const ResolutionList list = BuildResolutionList(HiDpiParams({ 5760, 3240 }, { 2880, 1620 }, { 3840, 2160 }, /*fitToScreen=*/true));
++	EXPECT_EQ(Labels(list), (std::vector<std::string> {
++	                            "3240p (x1)",
++	                            "2880p",
++	                            "2160p",
++	                            "1620p (x2)",
++	                            "1440p",
++	                            "1080p (x3)",
++	                            "810p (x4)",
++	                            "720p",
++	                            "648p (x5)",
++	                            "540p (x6)",
++	                            "480p",
++	                        }));
++	EXPECT_EQ(Sizes(list), (std::vector<Size> {
++	                           { 5760, 3240 },
++	                           { 5120, 2880 },
++	                           { 3840, 2160 },
++	                           { 2880, 1620 },
++	                           { 2560, 1440 },
++	                           { 1920, 1080 },
++	                           { 1440, 810 },
++	                           { 1280, 720 },
++	                           { 1152, 648 },
++	                           { 960, 540 },
++	                           { 853, 480 },
++	                       }));
++}
++
++// 5K display at its default "looks like 2560x1440": 5120x2880 pixels.
++TEST(ResolutionListTest, HiDpi5120x2880)
++{
++	const ResolutionList list = BuildResolutionList(HiDpiParams({ 5120, 2880 }, { 2560, 1440 }, { 640, 480 }, /*fitToScreen=*/false));
++	EXPECT_EQ(Labels(list), (std::vector<std::string> {
++	                            "5120x2880 (x1)",
++	                            "3840x2160",
++	                            "2560x1440 (x2)",
++	                            "1920x1080",
++	                            "1280x720 (x4)",
++	                            "1024x576 (x5)",
++	                            "960x540",
++	                            "640x480",
++	                        }));
++}
++
++TEST(ResolutionListTest, HiDpi5120x2880FitToScreen)
++{
++	const ResolutionList list = BuildResolutionList(HiDpiParams({ 5120, 2880 }, { 2560, 1440 }, { 1920, 1080 }, /*fitToScreen=*/true));
++	EXPECT_EQ(Labels(list), (std::vector<std::string> {
++	                            "2880p (x1)",
++	                            "2160p",
++	                            "1440p (x2)",
++	                            "1080p",
++	                            "720p (x4)",
++	                            "576p (x5)",
++	                            "540p",
++	                            "480p",
++	                        }));
++	EXPECT_EQ(Sizes(list), (std::vector<Size> {
++	                           { 5120, 2880 },
++	                           { 3840, 2160 },
++	                           { 2560, 1440 },
++	                           { 1920, 1080 },
++	                           { 1280, 720 },
++	                           { 1024, 576 },
++	                           { 960, 540 },
++	                           { 853, 480 },
++	                       }));
++}
++
++// 4K display at "looks like 1920x1080": 3840x2160 pixels.
++TEST(ResolutionListTest, HiDpi3840x2160)
++{
++	const ResolutionList list = BuildResolutionList(HiDpiParams({ 3840, 2160 }, { 1920, 1080 }, { 1280, 720 }, /*fitToScreen=*/false));
++	EXPECT_EQ(Labels(list), (std::vector<std::string> {
++	                            "3840x2160 (x1)",
++	                            "2560x1440",
++	                            "1920x1080 (x2)",
++	                            "1280x720 (x3)",
++	                            "960x540 (x4)",
++	                            "640x480",
++	                        }));
++}
++
++TEST(ResolutionListTest, HiDpi3840x2160FitToScreen)
++{
++	const ResolutionList list = BuildResolutionList(HiDpiParams({ 3840, 2160 }, { 1920, 1080 }, { 1280, 720 }, /*fitToScreen=*/true));
++	EXPECT_EQ(Labels(list), (std::vector<std::string> {
++	                            "2160p (x1)",
++	                            "1440p",
++	                            "1080p (x2)",
++	                            "720p (x3)",
++	                            "540p (x4)",
++	                            "480p",
++	                        }));
++	EXPECT_EQ(Sizes(list), (std::vector<Size> {
++	                           { 3840, 2160 },
++	                           { 2560, 1440 },
++	                           { 1920, 1080 },
++	                           { 1280, 720 },
++	                           { 960, 540 },
++	                           { 853, 480 },
++	                       }));
++}
++
++// A resolution from the ini file that is larger than the output (e.g. picked from the old doubled list)
++// is kept so that it remains selected, but no other resolution larger than the output is offered.
++TEST(ResolutionListTest, HiDpiKeepsConfiguredResolutionLargerThanOutput)
++{
++	const ResolutionList list = BuildResolutionList(HiDpiParams({ 3840, 2160 }, { 1920, 1080 }, { 10240, 5760 }, /*fitToScreen=*/false));
++	EXPECT_EQ(Labels(list), (std::vector<std::string> {
++	                            "10240x5760",
++	                            "3840x2160 (x1)",
++	                            "2560x1440",
++	                            "1920x1080 (x2)",
++	                            "1280x720 (x3)",
++	                            "960x540 (x4)",
++	                            "640x480",
++	                        }));
++
++	const ResolutionList fitList = BuildResolutionList(HiDpiParams({ 3840, 2160 }, { 1920, 1080 }, { 10240, 5760 }, /*fitToScreen=*/true));
++	EXPECT_EQ(Labels(fitList), (std::vector<std::string> {
++	                               "5760p",
++	                               "2160p (x1)",
++	                               "1440p",
++	                               "1080p (x2)",
++	                               "720p (x3)",
++	                               "540p (x4)",
++	                               "480p",
++	                           }));
++}
++
++// On HiDPI displays in portrait orientation, the list still follows the landscape output.
++TEST(ResolutionListTest, HiDpiFitToScreenPortraitDesktop)
++{
++	const ResolutionList list = BuildResolutionList(HiDpiParams({ 3840, 2160 }, { 1080, 1920 }, { 1280, 720 }, /*fitToScreen=*/true));
++	EXPECT_EQ(Sizes(list), (std::vector<Size> {
++	                           { 3840, 2160 },
++	                           { 2560, 1440 },
++	                           { 1920, 1080 },
++	                           { 1280, 720 },
++	                           { 960, 540 },
++	                           { 853, 480 },
++	                       }));
++}
++
++struct ReferenceCase {
++	const char *name;
++	std::vector<Size> displayModes;
++	Size configuredSize;
++	Size defaultSize;
++	bool supportsAnyResolution;
++	Size desktopSize;
++	bool removeSmallResolutions;
++};
++
++std::vector<ReferenceCase> ReferenceCases()
++{
++	const std::vector<Size> fullHdModes {
++		{ 1920, 1080 }, { 1680, 1050 }, { 1600, 900 }, { 1440, 900 }, { 1280, 1024 }, { 1280, 960 },
++		{ 1280, 800 }, { 1280, 720 }, { 1152, 864 }, { 1024, 768 }, { 800, 600 }, { 720, 480 }, { 720, 400 }, { 640, 480 }
++	};
++	// SDL2 on a Retina 5K display at "looks like 2880x1620": modes in window coordinates times 2,
++	// which is what upstream offered (and what this change still offers without upscaling).
++	std::vector<Size> retinaDoubledModes;
++	for (const Size mode : { Size { 2880, 1620 }, Size { 2560, 1440 }, Size { 2304, 1296 }, Size { 2048, 1152 }, Size { 1920, 1080 },
++	         Size { 1600, 900 }, Size { 1280, 720 }, Size { 1024, 768 }, Size { 800, 600 }, Size { 640, 480 } })
++		retinaDoubledModes.emplace_back(mode.width * 2, mode.height * 2);
++
++	return {
++		{ "FullHdMonitor", fullHdModes, { 640, 480 }, { 640, 480 }, true, { 1920, 1080 }, true },
++		{ "FullHdMonitorConfigured1280x720", fullHdModes, { 1280, 720 }, { 640, 480 }, true, { 1920, 1080 }, true },
++		{ "FullHdMonitorNoUpscale", fullHdModes, { 1024, 768 }, { 640, 480 }, false, { 1920, 1080 }, true },
++		{ "RetinaDoubledModes", retinaDoubledModes, { 10240, 5760 }, { 640, 480 }, true, { 2880, 1620 }, true },
++		{ "SingleMode16x9", { { 1920, 1080 } }, { 640, 480 }, { 640, 480 }, true, { 1920, 1080 }, true },
++		{ "SingleModePhone", { { 2400, 1080 } }, { 1280, 720 }, { 640, 480 }, true, { 2400, 1080 }, true },
++		{ "SingleMode16x10", { { 2560, 1600 } }, { 1440, 900 }, { 640, 480 }, true, { 2560, 1600 }, true },
++		{ "SingleModeUltrawide", { { 3440, 1440 } }, { 3440, 1440 }, { 640, 480 }, true, { 3440, 1440 }, true },
++		{ "SingleModeNoUpscale", { { 1920, 1080 } }, { 640, 480 }, { 640, 480 }, false, { 1920, 1080 }, true },
++		{ "NoModes", {}, { 800, 600 }, { 640, 480 }, true, { 1366, 768 }, true },
++		{ "NoModesUnknownDesktop", {}, { 800, 600 }, { 640, 480 }, true, { 0, 0 }, true },
++		{ "PortraitDesktop", { { 1920, 1080 }, { 1280, 720 } }, { 1280, 720 }, { 640, 480 }, true, { 1080, 1920 }, true },
++		{ "SmallScreenKeepsSmallModes", { { 400, 240 }, { 320, 240 } }, { 400, 240 }, { 800, 480 }, true, { 400, 240 }, false },
++		{ "SmallScreenRemovesSmallModes", { { 400, 240 }, { 320, 240 } }, { 400, 240 }, { 800, 480 }, false, { 400, 240 }, true },
++	};
++}
++
++// Without HiDPI output, the list must be exactly the same as before HiDPI support.
++TEST(ResolutionListTest, WithoutHiDpiMatchesReference)
++{
++	for (const ReferenceCase &testCase : ReferenceCases()) {
++		for (const bool fitToScreen : { false, true }) {
++			SCOPED_TRACE(StrCat(testCase.name, fitToScreen ? " fitToScreen" : ""));
++			ResolutionListParams params;
++			params.displayModes = testCase.displayModes;
++			params.configuredSize = testCase.configuredSize;
++			params.defaultSize = testCase.defaultSize;
++			params.desktopSize = testCase.desktopSize;
++			params.supportsAnyResolution = testCase.supportsAnyResolution;
++			params.fitToScreen = fitToScreen;
++			params.removeSmallResolutions = testCase.removeSmallResolutions;
++
++			const ResolutionList expected = ReferenceResolutionList(testCase.displayModes, testCase.configuredSize, testCase.defaultSize,
++			    testCase.supportsAnyResolution, fitToScreen, testCase.desktopSize, testCase.removeSmallResolutions);
++			const ResolutionList actual = BuildResolutionList(params);
++			ASSERT_FALSE(actual.empty());
++			EXPECT_EQ(Sizes(actual), Sizes(expected));
++			EXPECT_EQ(Labels(actual), Labels(expected));
++		}
++	}
++}
++
++// Without a HiDPI output size (e.g. without upscaling), display modes are used as given. On a Retina
++// display they are doubled, which is the list upstream showed with "Fit to Screen" (the bug this change fixes).
++TEST(ResolutionListTest, WithoutHiDpiUsesDisplayModesAsGiven)
++{
++	ResolutionListParams params;
++	for (const Size mode : { Size { 2880, 1620 }, Size { 1920, 1080 }, Size { 1280, 720 } })
++		params.displayModes.emplace_back(mode.width * 2, mode.height * 2);
++	params.configuredSize = { 640, 480 };
++	params.defaultSize = { 640, 480 };
++	params.desktopSize = { 2880, 1620 };
++	params.supportsAnyResolution = true;
++	params.fitToScreen = true;
++	EXPECT_EQ(Labels(BuildResolutionList(params)), (std::vector<std::string> { "3240p", "2160p", "1440p", "480p" }));
++}
++
++} // namespace
++} // namespace devilution

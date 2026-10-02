@@ -63,6 +63,7 @@ set(standalone_tests
   vision_test
   random_test
   rectangle_test
+  resolution_list_test
   sheen_bidi_test
   static_vector_test
   str_cat_test
@@ -167,6 +168,7 @@ target_link_dependencies(path_test PRIVATE libdevilutionx_pathfinding libdevilut
 target_link_dependencies(vision_test PRIVATE libdevilutionx_vision)
 target_link_dependencies(path_benchmark PRIVATE libdevilutionx_pathfinding app_fatal_for_testing)
 target_link_dependencies(random_test PRIVATE libdevilutionx_random)
+target_link_dependencies(resolution_list_test PRIVATE libdevilutionx_resolution_list)
 target_link_dependencies(static_vector_test PRIVATE libdevilutionx_random app_fatal_for_testing)
 target_link_dependencies(str_cat_test PRIVATE libdevilutionx_strings)
 if(DEVILUTIONX_SCREENSHOT_FORMAT STREQUAL DEVILUTIONX_SCREENSHOT_FORMAT_PNG AND NOT USE_SDL1)
