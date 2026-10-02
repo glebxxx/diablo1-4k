@@ -1,11 +1,32 @@
-# diablo1-4k
+# Diablo 1 · 4K · macOS
 
-**Diablo 1 + Hellfire for macOS in 4K/5K**: a macOS-focused fork of [DevilutionX](https://github.com/diasurgical/DevilutionX), the open-source Diablo engine.
+![Diablo 1 on macOS in 4K](docs/banner.jpg)
 
-> 🇷🇺 **Diablo 1 + Hellfire на macOS в 4K/5K.** Форк открытого движка DevilutionX под macOS: нативная сборка, Retina/5K, крупный интерфейс, зум, бег героя, полностью русская версия.
-> **Файлов игры в репозитории нет.** Нужна своя копия Diablo (например, [GOG](https://www.gog.com/game/diablo)).
+**Классическая Diablo (1996) и дополнение Hellfire — нативно на macOS, в 4K/5K, полностью на русском и с HD-текстурами.**
+**Classic Diablo (1996) + Hellfire running natively on macOS in 4K/5K, fully in Russian, with upscaled HD textures.**
 
-**Status:** early work in progress. The base engine builds and runs natively on macOS (Intel and Apple Silicon), using only the Xcode Command Line Tools.
+### 🇷🇺 Что это за проект
+
+Оригинальная Diablo создавалась под 640×480 и Windows 95. Здесь мы делаем из неё современную игру для Mac, сохраняя дух оригинала:
+
+- 🍎 **Нативно на macOS.** Обычное `.app` для Intel и Apple Silicon, без эмуляторов, Wine и виртуальных машин. В основе открытый движок [DevilutionX](https://github.com/diasurgical/DevilutionX).
+- 🖥️ **4K и 5K на Retina.** Чёткая картинка без мыла с целочисленным масштабированием. Интерфейс растягивается на весь экран, есть зум карты кнопками сбоку.
+- 🧠 **HD-текстуры.** Оригинальная графика увеличивается нейросетью (Topaz, Real-ESRGAN) до 4×, плюс сглаживающие фильтры и апскейл в реальном времени, как DLSS. HD-пак собирается **локально из вашей копии игры** специальными скриптами: графику Blizzard мы не распространяем.
+- 🇷🇺 **Полностью на русском.** Интерфейс, предметы, квесты, диалоги и русская озвучка.
+- 🏃 **Удобства.** Бег героя в подземельях и другие улучшения в духе оригинала.
+
+Чтобы играть, нужна **своя копия** Diablo + Hellfire (например, с [GOG](https://www.gog.com/game/diablo)). Файлы игры в репозиторий не входят.
+
+### 🇬🇧 What is this
+
+A macOS-first fork of the open-source DevilutionX engine:
+- a native Mac app (Intel and Apple Silicon);
+- crisp 4K/5K Retina output with UI scaling and map zoom;
+- AI-upscaled HD textures, generated locally from **your own** game files;
+- a full Russian localization with voice-over;
+- quality-of-life features such as running in dungeons.
+
+You need to own the original game. No game assets are included.
 
 ## Goals
 
@@ -18,7 +39,7 @@
 | UI scaling: the interface fills the screen | 📝 designed |
 | Pixel-art post-filters (Scale2x / MMPX) | 📝 planned |
 | GPU real-time upscaling ("DLSS-like": FSR1 / MetalFX) | 🔬 research |
-| Optional HD texture packs, built locally from your own game files | 🔬 research |
+| HD texture packs (AI-upscaled), built locally from your own game files | 🔬 in development |
 | Full Russian version (UI, texts, voice) | ✅ via DevilutionX `ru` + official `ru.mpq` voice pack |
 
 ## Build (macOS)
