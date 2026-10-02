@@ -2,6 +2,10 @@
 
 ![Diablo 1 on macOS in 4K](docs/banner.jpg)
 
+[![Linux tests](https://github.com/glebxxx/diablo1-4k/actions/workflows/linux-test.yml/badge.svg?branch=main)](https://github.com/glebxxx/diablo1-4k/actions/workflows/linux-test.yml?query=branch%3Amain)
+[![macOS](https://github.com/glebxxx/diablo1-4k/actions/workflows/macos.yml/badge.svg?branch=main)](https://github.com/glebxxx/diablo1-4k/actions/workflows/macos.yml?query=branch%3Amain)
+[![Lint](https://github.com/glebxxx/diablo1-4k/actions/workflows/lint.yml/badge.svg?branch=main)](https://github.com/glebxxx/diablo1-4k/actions/workflows/lint.yml?query=branch%3Amain)
+
 **Классическая Diablo (1996) и дополнение Hellfire — нативно на macOS, в 4K/5K, полностью на русском и с HD-текстурами.**
 **Classic Diablo (1996) + Hellfire running natively on macOS in 4K/5K, fully in Russian, with upscaled HD textures.**
 
