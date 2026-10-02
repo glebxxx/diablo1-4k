@@ -7,6 +7,7 @@
 
 #include "cursor_defs.hpp"
 #include "engine/clx_sprite.hpp"
+#include "engine/displacement.hpp"
 #include "engine/point.hpp"
 #include "engine/size.hpp"
 #include "engine/surface.hpp"
@@ -43,6 +44,15 @@ void InitLevelCursor();
 void CheckRportal();
 void CheckTown();
 void CheckCursMove();
+
+/** @brief Predicted screen motion of the walking hero in the next frame (avoids input jitter). */
+Displacement WalkingInputPrediction(const Player &myPlayer);
+
+/**
+ * @brief Returns the tile under a world surface position (layered renderer), the exact inverse of `GetScreenPosition`.
+ * @param flipflag Set when the position is in the upper half of the tile below
+ */
+Point WorldPointToTile(Point worldPosition, bool &flipflag);
 
 void DrawSoftwareCursor(const Surface &out, Point position, int cursId);
 

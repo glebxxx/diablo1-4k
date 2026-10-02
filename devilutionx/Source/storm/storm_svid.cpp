@@ -30,6 +30,7 @@
 
 #include "engine/assets.hpp"
 #include "engine/dx.h"
+#include "engine/layered_present.hpp"
 #include "engine/palette.h"
 #include "engine/sound.h"
 #include "options.h"
@@ -345,6 +346,7 @@ void SVidInitAudioStream(const SmackerAudioInfo &audioInfo)
 
 bool SVidPlayBegin(const char *filename, int flags)
 {
+	EndLayeredMode();
 	if ((flags & 0x10000) != 0 || (flags & 0x20000000) != 0) {
 		return false;
 	}

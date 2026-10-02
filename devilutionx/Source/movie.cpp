@@ -20,6 +20,7 @@
 #include "engine/backbuffer_state.hpp"
 #include "engine/demomode.h"
 #include "engine/events.hpp"
+#include "engine/layered_present.hpp"
 #include "engine/sound.h"
 #include "headless_mode.hpp"
 #include "hwcursor.hpp"
@@ -36,6 +37,7 @@ bool loop_movie;
 
 void play_movie(const char *pszMovie, bool userCanClose)
 {
+	EndLayeredMode();
 	if (demo::IsRunning())
 		return;
 

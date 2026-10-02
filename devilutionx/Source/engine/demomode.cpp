@@ -636,6 +636,8 @@ void OverrideOptions()
 #if SDL_VERSION_ATLEAST(2, 0, 0)
 	GetOptions().Graphics.hardwareCursor.SetValue(false);
 #endif
+	// Demos store the screen size and mouse positions, the layered renderer would change their meaning.
+	GetOptions().Graphics.independentZoom.SetValue(false);
 	if (Timedemo) {
 		GetOptions().Graphics.frameRateControl.SetValue(FrameRateControl::None);
 	}

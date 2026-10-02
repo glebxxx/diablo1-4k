@@ -601,11 +601,19 @@ void ClxDrawWithLightmap(const Surface &out, Point position, ClxSprite clx, cons
 
 void ClxDrawBlended(const Surface &out, Point position, ClxSprite clx)
 {
+	if (IsKeyedUiLayer(out)) {
+		DoRenderBackwards(out, position, clx.pixelData(), clx.pixelDataSize(), clx.width(), clx.height(), BlitBlendedKeyed {});
+		return;
+	}
 	DoRenderBackwards(out, position, clx.pixelData(), clx.pixelDataSize(), clx.width(), clx.height(), BlitBlended {});
 }
 
 void ClxDrawBlendedTRN(const Surface &out, Point position, ClxSprite clx, const uint8_t *trn)
 {
+	if (IsKeyedUiLayer(out)) {
+		DoRenderBackwards(out, position, clx.pixelData(), clx.pixelDataSize(), clx.width(), clx.height(), BlitBlendedWithMapKeyed { trn });
+		return;
+	}
 	DoRenderBackwards(out, position, clx.pixelData(), clx.pixelDataSize(), clx.width(), clx.height(), BlitBlendedWithMap { trn });
 }
 

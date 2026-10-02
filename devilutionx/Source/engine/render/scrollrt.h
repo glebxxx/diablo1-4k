@@ -58,6 +58,13 @@ void TilesInView(int *columns, int *rows);
 void CalcViewportGeometry();
 
 /**
+ * @brief Calculate the first tile to render and the screen offset of its bounding box
+ * @param position Center of view in dPiece coordinates, becomes the first tile
+ * @param offset Bottom-left corner of the bounding box of the first tile
+ */
+void CalcFirstTilePosition(Point &position, Displacement &offset);
+
+/**
  * @brief Calculate the screen position of a given tile
  * @param tile Position of a dungeon tile
  */

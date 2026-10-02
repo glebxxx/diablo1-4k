@@ -50,6 +50,7 @@
 #include "engine/load_file.hpp"
 #include "engine/random.hpp"
 #include "engine/render/clx_render.hpp"
+#include "engine/render/world_view.hpp"
 #include "engine/sound.h"
 #include "game_mode.hpp"
 #include "gamemenu.h"
@@ -586,6 +587,8 @@ void PressKey(SDL_Keycode vkey, uint16_t modState)
 	case SDLK_KP_EQUALS:
 		if (AutomapActive) {
 			AutomapZoomIn();
+		} else if (IsLayeredActive()) {
+			WorldZoomIn();
 		}
 		return;
 	case SDLK_MINUS:
@@ -593,6 +596,8 @@ void PressKey(SDL_Keycode vkey, uint16_t modState)
 	case SDLK_UNDERSCORE:
 		if (AutomapActive) {
 			AutomapZoomOut();
+		} else if (IsLayeredActive()) {
+			WorldZoomOut();
 		}
 		return;
 #ifdef _DEBUG
@@ -810,9 +815,12 @@ void GameEventHandler(const SDL_Event &event, uint16_t modState)
 				ChatLogScrollUp();
 			} else if (IsStashOpen) {
 				Stash.PreviousPage();
-			} else if (SDL_GetModState() & SDL_KMOD_CTRL) {
+			} else if (SDL_GetModState() & (SDL_KMOD_CTRL | SDL_KMOD_GUI)) {
+				// Cmd+wheel too: on macOS, Ctrl+wheel may be taken by Accessibility Zoom.
 				if (AutomapActive) {
 					AutomapZoomIn();
+				} else if (IsLayeredActive()) {
+					WorldZoomIn();
 				}
 			} else {
 				KeymapperPress(MouseScrollUpButton);
@@ -828,9 +836,11 @@ void GameEventHandler(const SDL_Event &event, uint16_t modState)
 				ChatLogScrollDown();
 			} else if (IsStashOpen) {
 				Stash.NextPage();
-			} else if (SDL_GetModState() & SDL_KMOD_CTRL) {
+			} else if (SDL_GetModState() & (SDL_KMOD_CTRL | SDL_KMOD_GUI)) {
 				if (AutomapActive) {
 					AutomapZoomOut();
+				} else if (IsLayeredActive()) {
+					WorldZoomOut();
 				}
 			} else {
 				KeymapperPress(MouseScrollDownButton);
@@ -2073,6 +2083,10 @@ void InitKeymapActions()
 	    N_("Zoom Game Screen."),
 	    'Z',
 	    [] {
+		    if (IsLayeredActive()) {
+			    WorldZoomToggle();
+			    return;
+		    }
 		    GetOptions().Graphics.zoom.SetValue(!*GetOptions().Graphics.zoom);
 		    CalcViewportGeometry();
 	    },
@@ -2591,6 +2605,10 @@ void InitPadmapActions()
 	    N_("Zoom Game Screen."),
 	    ControllerButton_NONE,
 	    [] {
+		    if (IsLayeredActive()) {
+			    WorldZoomToggle();
+			    return;
+		    }
 		    GetOptions().Graphics.zoom.SetValue(!*GetOptions().Graphics.zoom);
 		    CalcViewportGeometry();
 	    },

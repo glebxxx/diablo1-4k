@@ -75,12 +75,14 @@ set(libdevilutionx_SRCS
   engine/backbuffer_state.cpp
   engine/dx.cpp
   engine/events.cpp
+  engine/layered_present.cpp
   engine/palette.cpp
   engine/sound_position.cpp
   engine/trn.cpp
 
   engine/render/automap_render.cpp
   engine/render/scrollrt.cpp
+  engine/render/world_view.cpp
 
   items/validation.cpp
 
@@ -236,6 +238,7 @@ target_link_dependencies(libdevilutionx_clx_render PUBLIC
   libdevilutionx_light_render
   libdevilutionx_palette_blending
   libdevilutionx_strings
+  libdevilutionx_ui_layer
 )
 
 add_devilutionx_object_library(libdevilutionx_codec
@@ -272,6 +275,7 @@ target_link_dependencies(libdevilutionx_control
   libdevilutionx_primitive_render
   libdevilutionx_quick_messages
   libdevilutionx_strings
+  libdevilutionx_ui_layer
 )
 
 add_devilutionx_object_library(libdevilutionx_controller_buttons
@@ -332,6 +336,7 @@ target_link_dependencies(libdevilutionx_primitive_render
   PUBLIC
   libdevilutionx_palette_blending
   libdevilutionx_surface
+  libdevilutionx_ui_layer
 )
 
 add_devilutionx_object_library(libdevilutionx_crawl
@@ -368,6 +373,16 @@ add_devilutionx_object_library(libdevilutionx_surface
 )
 target_link_dependencies(libdevilutionx_surface PUBLIC
   DevilutionX::SDL
+)
+
+add_devilutionx_object_library(libdevilutionx_ui_layer
+  engine/render/ui_layer.cpp
+)
+target_link_dependencies(libdevilutionx_ui_layer
+  PUBLIC
+  DevilutionX::SDL
+  libdevilutionx_palette_blending
+  libdevilutionx_surface
 )
 
 add_devilutionx_object_library(libdevilutionx_file_util

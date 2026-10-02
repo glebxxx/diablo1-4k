@@ -38,6 +38,7 @@
 #include "effects.h"
 #include "engine/clx_sprite.hpp"
 #include "engine/dx.h"
+#include "engine/layered_present.hpp"
 #include "engine/load_pcx.hpp"
 #include "engine/palette.h"
 #include "engine/render/clx_render.hpp"
@@ -796,6 +797,7 @@ void UiAddLogo(std::vector<std::unique_ptr<UiItemBase>> *vecDialog, int y)
 
 void UiFadeIn()
 {
+	EndLayeredMode();
 	if (HeadlessMode) return;
 	UiUpdateFadePalette();
 	if (DiabloUiSurface() == PalSurface) {
@@ -841,6 +843,7 @@ void UiClearScreen()
 
 void UiPollAndRender(std::optional<tl::function_ref<bool(SDL_Event &)>> eventHandler)
 {
+	EndLayeredMode();
 	SDL_Event event;
 	while (PollEvent(&event)) {
 		if (eventHandler && (*eventHandler)(event))

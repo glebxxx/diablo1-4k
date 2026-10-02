@@ -795,6 +795,20 @@ GraphicsOptions::GraphicsOptions()
           })
     , brightness("Brightness Correction", OptionEntryFlags::Invisible, "Brightness Correction", "Brightness correction level.", 0)
     , zoom("Zoom", OptionEntryFlags::None, N_("Zoom"), N_("Zoom on when enabled."), false)
+    , independentZoom("Independent Zoom", OptionEntryFlags::None
+#if defined(USE_SDL1) || defined(USE_SDL3)
+              | OptionEntryFlags::Invisible
+#endif
+          ,
+          N_("Independent Zoom"), N_("Draws the world and the interface as separate layers, so that the world can be zoomed with +/- and Ctrl/Cmd+mouse wheel without changing the size of the interface. Requires upscaling."), true)
+    , worldZoom("World Zoom", OptionEntryFlags::None
+#if defined(USE_SDL1) || defined(USE_SDL3)
+              | OptionEntryFlags::Invisible
+#endif
+          ,
+          N_("World Zoom"), N_("Screen pixels per world pixel with Independent Zoom. 0 picks a level automatically. Changed by the zoom keys."), 0, { 0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 16 })
+    , worldZoomMinHeight("World Zoom Min Height", OptionEntryFlags::Invisible, N_("World Zoom Min Height"), N_("Smallest visible world height, in world pixels, offered as a zoom level."), 240)
+    , worldZoomMaxHeight("World Zoom Max Height", OptionEntryFlags::Invisible, N_("World Zoom Max Height"), N_("Largest visible world height, in world pixels, offered as a zoom level. Larger worlds take longer to draw."), 1620)
     , perPixelLighting("Per-pixel Lighting", OptionEntryFlags::None, N_("Per-pixel Lighting"), N_("Subtile lighting for smoother light gradients."), DEFAULT_PER_PIXEL_LIGHTING)
     , colorCycling("Color Cycling", OptionEntryFlags::None, N_("Color Cycling"), N_("Color cycling effect used for water, lava, and acid animation."), true)
     , alternateNestArt("Alternate nest art", OptionEntryFlags::OnlyHellfire | OptionEntryFlags::CantChangeInGame, N_("Alternate nest art"), N_("The game will use an alternative palette for Hellfire’s nest tileset."), false)
@@ -825,6 +839,10 @@ std::vector<OptionEntryBase *> GraphicsOptions::GetEntries()
 		&frameRateControl,
 		&brightness,
 		&zoom,
+		&independentZoom,
+		&worldZoom,
+		&worldZoomMinHeight,
+		&worldZoomMaxHeight,
 		&showFPS,
 		&perPixelLighting,
 		&colorCycling,

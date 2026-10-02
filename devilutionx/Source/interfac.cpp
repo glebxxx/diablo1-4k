@@ -26,6 +26,7 @@
 #include "engine/clx_sprite.hpp"
 #include "engine/dx.h"
 #include "engine/events.hpp"
+#include "engine/layered_present.hpp"
 #include "engine/load_cel.hpp"
 #include "engine/load_clx.hpp"
 #include "engine/palette.h"
@@ -224,6 +225,7 @@ void FreeCutsceneBackground()
 
 void DrawCutsceneBackground()
 {
+	EndLayeredMode();
 	const Rectangle &uiRectangle = GetUIRectangle();
 	const Surface &out = GlobalBackBuffer();
 	SDL_FillSurfaceRect(out.surface, nullptr, 0);
@@ -236,6 +238,7 @@ void DrawCutsceneBackground()
 
 void DrawCutsceneForeground()
 {
+	EndLayeredMode();
 	const Rectangle &uiRectangle = GetUIRectangle();
 	const Surface &out = GlobalBackBuffer();
 	constexpr int ProgressHeight = 22;

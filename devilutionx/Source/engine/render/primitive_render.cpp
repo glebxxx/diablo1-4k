@@ -6,6 +6,7 @@
 
 #include "engine/point.hpp"
 #include "engine/size.hpp"
+#include "engine/render/ui_layer.hpp"
 #include "engine/surface.hpp"
 #include "utils/palette_blending.hpp"
 
@@ -77,6 +78,37 @@ void DrawHalfTransparentBlendedRectTo(const Surface &out, unsigned sx, unsigned 
 #define DrawHalfTransparentBlendedRectTo DrawHalfTransparentUnalignedBlendedRectTo
 #endif
 
+/** @brief Half-transparent rectangle on the keyed UI layer (layered renderer). */
+void DrawHalfTransparentKeyedRectTo(const Surface &out, unsigned sx, unsigned sy, unsigned width, unsigned height, uint8_t color)
+{
+	uint8_t *pix = out.at(static_cast<int>(sx), static_cast<int>(sy));
+	uint8_t *half = UiHalfPlaneAt(pix);
+	const unsigned skipX = out.pitch() - width;
+	for (unsigned y = 0; y < height; ++y) {
+		for (unsigned x = 0; x < width; ++x, ++pix, ++half) {
+			BlendUiPixelKeyed(*pix, *half, color);
+		}
+		pix += skipX;
+		half += skipX;
+	}
+}
+
+void SetHalfTransparentPixelUnkeyed(const Surface &out, Point position, uint8_t color)
+{
+	if (out.InBounds(position)) {
+		uint8_t *pix = out.at(position.x, position.y);
+		*pix = paletteTransparencyLookup[color][*pix];
+	}
+}
+
+void SetHalfTransparentPixelKeyed(const Surface &out, Point position, uint8_t color)
+{
+	if (out.InBounds(position)) {
+		uint8_t *pix = out.at(position.x, position.y);
+		BlendUiPixelKeyed(*pix, *UiHalfPlaneAt(pix), color);
+	}
+}
+
 } // namespace
 
 void FillRect(const Surface &out, int x, int y, int width, int height, uint8_t colorIndex)
@@ -136,8 +168,15 @@ void DrawHalfTransparentHorizontalLine(const Surface &out, Point from, int width
 	const int x0 = std::max(0, from.x);
 	const int x1 = std::min(out.w(), from.x + width);
 
+	if (IsKeyedUiLayer(out)) {
+		for (int x = x0; x < x1; ++x) {
+			SetHalfTransparentPixelKeyed(out, { x, from.y }, colorIndex);
+		}
+		return;
+	}
+
 	for (int x = x0; x < x1; ++x) {
-		SetHalfTransparentPixel(out, { x, from.y }, colorIndex);
+		SetHalfTransparentPixelUnkeyed(out, { x, from.y }, colorIndex);
 	}
 }
 
@@ -151,8 +190,15 @@ void DrawHalfTransparentVerticalLine(const Surface &out, Point from, int height,
 	const int y0 = std::max(0, from.y);
 	const int y1 = std::min(out.h(), from.y + height);
 
+	if (IsKeyedUiLayer(out)) {
+		for (int y = y0; y < y1; ++y) {
+			SetHalfTransparentPixelKeyed(out, { from.x, y }, colorIndex);
+		}
+		return;
+	}
+
 	for (int y = y0; y < y1; ++y) {
-		SetHalfTransparentPixel(out, { from.x, y }, colorIndex);
+		SetHalfTransparentPixelUnkeyed(out, { from.x, y }, colorIndex);
 	}
 }
 
@@ -179,6 +225,12 @@ void DrawHalfTransparentRectTo(const Surface &out, int sx, int sy, int width, in
 		sy = 0;
 	} else if (sy + height >= out.h()) {
 		height = out.h() - sy;
+	}
+
+	if (IsKeyedUiLayer(out)) {
+		// The aligned Black16 fast path does not know the keys.
+		DrawHalfTransparentKeyedRectTo(out, sx, sy, width, height, 0);
+		return;
 	}
 
 	DrawHalfTransparentBlendedRectTo(out, sx, sy, width, height);
@@ -209,11 +261,20 @@ void DrawHalfTransparentRectTo(const Surface &out, int sx, int sy, int width, in
 		height = out.h() - sy;
 	}
 
+	if (IsKeyedUiLayer(out)) {
+		DrawHalfTransparentKeyedRectTo(out, sx, sy, width, height, color);
+		return;
+	}
+
 	DrawHalfTransparentUnalignedBlendedRectTo(out, sx, sy, width, height, color);
 }
 
 void SetHalfTransparentPixel(const Surface &out, Point position, uint8_t color)
 {
+	if (IsKeyedUiLayer(out)) {
+		SetHalfTransparentPixelKeyed(out, position, color);
+		return;
+	}
 	if (out.InBounds(position)) {
 		uint8_t *pix = out.at(position.x, position.y);
 		const auto &lookupTable = paletteTransparencyLookup[color];

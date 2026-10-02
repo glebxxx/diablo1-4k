@@ -29,6 +29,8 @@
 #include "engine/points_in_rectangle_range.hpp"
 #include "engine/render/clx_render.hpp"
 #include "engine/render/primitive_render.hpp"
+#include "engine/render/scrollrt.h"
+#include "engine/render/world_view.hpp"
 #include "engine/trn.hpp"
 #include "headless_mode.hpp"
 #include "hwcursor.hpp"
@@ -265,6 +267,13 @@ bool TrySelectPixelBased(Point tile)
 		const Point renderPosition = GetScreenPosition(renderingTile) + renderingOffset;
 		Point spriteTopLeft = renderPosition - Displacement { 0, sprite.height() };
 		Size spriteSize = { sprite.width(), sprite.height() };
+		if (IsLayeredActive()) {
+			// The sprite rectangle is in world pixels.
+			const Point mouseWorld = UiToWorld(GetWorldView(), MousePosition);
+			if (!Rectangle(spriteTopLeft, spriteSize).contains(mouseWorld))
+				return false;
+			return IsPointWithinClx(Point { 0, 0 } + (mouseWorld - spriteTopLeft), sprite);
+		}
 		if (*GetOptions().Graphics.zoom) {
 			spriteSize *= 2;
 			spriteTopLeft *= 2;
@@ -693,6 +702,19 @@ void AlterMousePositionViaZoom(Point &screenPosition)
 	}
 }
 
+Displacement WalkingInputPrediction(const Player &myPlayer)
+{
+	if (!myPlayer.isWalking())
+		return {};
+	const DisplacementOf<int16_t> offset2 = myPlayer.position.CalculateWalkingOffsetShifted8(myPlayer._pdir, myPlayer.AnimInfo);
+	const DisplacementOf<int16_t> velocity = myPlayer.position.GetWalkingVelocityShifted8(myPlayer._pdir, myPlayer.AnimInfo);
+	int fx = offset2.deltaX / 256;
+	int fy = offset2.deltaY / 256;
+	fx -= (offset2.deltaX + velocity.deltaX) / 256;
+	fy -= (offset2.deltaY + velocity.deltaY) / 256;
+	return { fx, fy };
+}
+
 /**
  * @brief Adjust by player offset and tile grid alignment
  */
@@ -711,15 +733,9 @@ void AlterMousePositionViaPlayer(Point &screenPosition, const Player &myPlayer)
 		screenPosition.y -= offset.deltaY;
 
 		// Predict the next frame when walking to avoid input jitter
-		const DisplacementOf<int16_t> offset2 = myPlayer.position.CalculateWalkingOffsetShifted8(myPlayer._pdir, myPlayer.AnimInfo);
-		const DisplacementOf<int16_t> velocity = myPlayer.position.GetWalkingVelocityShifted8(myPlayer._pdir, myPlayer.AnimInfo);
-		int fx = offset2.deltaX / 256;
-		int fy = offset2.deltaY / 256;
-		fx -= (offset2.deltaX + velocity.deltaX) / 256;
-		fy -= (offset2.deltaY + velocity.deltaY) / 256;
-
-		screenPosition.x -= fx;
-		screenPosition.y -= fy;
+		const Displacement prediction = WalkingInputPrediction(myPlayer);
+		screenPosition.x -= prediction.deltaX;
+		screenPosition.y -= prediction.deltaY;
 	}
 }
 
@@ -775,6 +791,31 @@ void ShiftToDiamondGridAlignment(Point screenPosition, Point &tile, bool &flipfl
 	tile.y = std::clamp(tile.y, 0, MAXDUNY - 1);
 
 	flipflag = (flipy && flipx) || ((flipy || flipx) && px < TILE_WIDTH / 2);
+}
+
+Point WorldPointToTile(Point worldPosition, bool &flipflag)
+{
+	// Inverts `GetScreenPosition`: the first rendered tile and its offset come from the same call.
+	Point firstTile = ViewPosition;
+	Displacement offset = {};
+	CalcFirstTilePosition(firstTile, offset);
+
+	// Cells of TILE_WIDTH x TILE_HEIGHT whose left edge runs through the middle of the
+	// tile diamond, as expected by `ShiftToDiamondGridAlignment`. The bounding box of
+	// `firstTile` has its bottom-left corner at `offset`.
+	Point screenPosition {
+		worldPosition.x - (offset.deltaX + TILE_WIDTH / 2),
+		worldPosition.y - (offset.deltaY - (TILE_HEIGHT - 1)),
+	};
+	screenPosition -= WalkingInputPrediction(*MyPlayer);
+
+	auto floorDiv = [](int a, int b) { return a >= 0 ? a / b : -((-a + b - 1) / b); };
+	auto posMod = [](int a, int b) { return ((a % b) + b) % b; };
+
+	Point tile = firstTile;
+	ShiftGrid(&tile, floorDiv(screenPosition.x, TILE_WIDTH), floorDiv(screenPosition.y, TILE_HEIGHT));
+	ShiftToDiamondGridAlignment({ posMod(screenPosition.x, TILE_WIDTH), posMod(screenPosition.y, TILE_HEIGHT) }, tile, flipflag);
+	return tile;
 }
 
 /**
@@ -906,19 +947,25 @@ void CheckCursMove()
 
 	Point screenPosition = MousePosition;
 	const Rectangle &mainPanel = GetMainPanel();
-
-	AlterMousePositionViaPanels(screenPosition);
-	AlterMousePositionViaScrolling(screenPosition, mainPanel);
-	AlterMousePositionViaZoom(screenPosition);
-
 	const Player &myPlayer = *MyPlayer;
-
-	AlterMousePositionViaPlayer(screenPosition, myPlayer);
-
 	bool flipflag = false;
-	Point currentTile = ConvertToTileGrid(screenPosition);
+	Point currentTile;
 
-	ShiftToDiamondGridAlignment(screenPosition, currentTile, flipflag);
+	if (IsLayeredActive()) {
+		// Exact inverse of the layered renderer.
+		AlterMousePositionViaScrolling(screenPosition, mainPanel);
+		currentTile = WorldPointToTile(UiToWorld(GetWorldView(), screenPosition), flipflag);
+	} else {
+		AlterMousePositionViaPanels(screenPosition);
+		AlterMousePositionViaScrolling(screenPosition, mainPanel);
+		AlterMousePositionViaZoom(screenPosition);
+
+		AlterMousePositionViaPlayer(screenPosition, myPlayer);
+
+		currentTile = ConvertToTileGrid(screenPosition);
+
+		ShiftToDiamondGridAlignment(screenPosition, currentTile, flipflag);
+	}
 
 	if (CheckMouseHold(currentTile)) return;
 

@@ -8,6 +8,7 @@
 #include "controls/modifier_hints.h"
 #include "diablo_msg.hpp"
 #include "engine/backbuffer_state.hpp"
+#include "engine/layered_present.hpp"
 #include "engine/load_cel.hpp"
 #include "engine/render/clx_render.hpp"
 #include "engine/trn.hpp"
@@ -775,6 +776,32 @@ void RedBack(const Surface &out)
 {
 	uint8_t *dst = out.begin();
 	uint8_t *tbl = GetPauseTRN();
+	if (IsUiLayer(out) && PresentLayered()) {
+		// Layered renderer: tint the whole world, then the opaque and half-transparent UI pixels.
+		const bool skipLow = leveltype == DTYPE_HELL;
+		const Surface world = WorldBuffer();
+		uint8_t *worldDst = world.begin();
+		for (int h = world.h(); h != 0; h--, worldDst += world.pitch() - world.w()) {
+			for (int w = world.w(); w != 0; w--, worldDst++) {
+				if (!skipLow || *worldDst >= 32)
+					*worldDst = tbl[*worldDst];
+			}
+		}
+		uint8_t *half = UiHalfPlaneAt(dst);
+		for (int h = out.h(); h != 0; h--, dst += out.pitch() - out.w(), half += out.pitch() - out.w()) {
+			for (int w = out.w(); w != 0; w--, dst++, half++) {
+				if (*dst == UiKeyTransparent)
+					continue;
+				if (*dst == UiKeyHalf) {
+					if (!skipLow || *half >= 32)
+						*half = tbl[*half];
+				} else if (!skipLow || *dst >= 32) {
+					*dst = UiKeyRemap[tbl[*dst]];
+				}
+			}
+		}
+		return;
+	}
 	for (int h = gnViewportHeight; h != 0; h--, dst += out.pitch() - gnScreenWidth) {
 		for (int w = gnScreenWidth; w != 0; w--) {
 			if (leveltype != DTYPE_HELL || *dst >= 32)

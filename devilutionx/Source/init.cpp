@@ -23,6 +23,8 @@
 #include "engine/backbuffer_state.hpp"
 #include "engine/dx.h"
 #include "engine/events.hpp"
+#include "engine/render/scrollrt.h"
+#include "engine/render/world_view.hpp"
 #include "game_mode.hpp"
 #include "headless_mode.hpp"
 #include "hwcursor.hpp"
@@ -174,6 +176,12 @@ void MainWndProc(const SDL_Event &event)
 	case SDL_WINDOWEVENT_SIZE_CHANGED:
 #endif
 		ReinitializeHardwareCursor();
+		if (IsLayeredActive()) {
+			// The output size changes the world surface size.
+			RecalcWorldView();
+			CalcViewportGeometry();
+			RedrawEverything();
+		}
 		break;
 #ifdef USE_SDL3
 	case SDL_EVENT_WINDOW_MOUSE_LEAVE:

@@ -21,6 +21,7 @@
 #include "engine/backbuffer_state.hpp"
 #include "engine/demomode.h"
 #include "engine/dx.h"
+#include "engine/layered_present.hpp"
 #include "engine/load_file.hpp"
 #include "engine/random.hpp"
 #include "headless_mode.hpp"
@@ -197,6 +198,7 @@ void LoadPaletteAndInitBlending(const char *path)
 	} else {
 		GenerateBlendedLookupTable(logical_palette.data());
 	}
+	RebuildUiKeyRemap();
 }
 
 void LoadRndLvlPal(dungeon_type l)
