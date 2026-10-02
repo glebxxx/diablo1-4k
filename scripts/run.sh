@@ -8,7 +8,7 @@
 #   --profile NAME|FILE  apply config/NAME.ini (or any .ini fragment) first
 #   --global             write the profile into your main diablo.ini (a timestamped
 #                        backup is made first) instead of a separate profile folder
-#   --app PATH           app bundle to run (default: build/devilutionx.app)
+#   --app PATH           app bundle to run (default: build/Diablo 4K.app)
 #   --dry-run            print what would happen, change nothing, do not launch
 #   --list               list available profiles
 #
@@ -27,7 +27,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP="$ROOT/build/devilutionx.app"
+APP="$ROOT/build/Diablo 4K.app"
 PREF="${DVX_PREF_DIR:-$HOME/Library/Application Support/diasurgical/devilution}"
 profile=""
 global=0

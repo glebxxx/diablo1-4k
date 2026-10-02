@@ -35,6 +35,7 @@ You need to own the original game. No game assets are included.
 | Native macOS build (CLT only, all deps vendored, no Homebrew) | ✅ works |
 | Retina / 5K resolution list with integer-scale hints (upstream bug #4348) | ✅ works (`patches/0001`) |
 | Run in dungeons (single-player, **J** toggles) | ✅ works (`patches/0002`) |
+| Own app name and bundle id: **Diablo 4K**, `io.github.glebxxx.diablo1-4k` (saves stay where they were) | ✅ works (`patches/0003`) |
 | Multi-level world zoom, with on-screen buttons on the side | 📝 designed |
 | UI scaling: the interface fills the screen | 📝 designed |
 | Pixel-art post-filters (Scale2x / MMPX) | 📝 planned |
@@ -47,7 +48,7 @@ You need to own the original game. No game assets are included.
 You need the Xcode Command Line Tools (`xcode-select --install`) and CMake 3.22 or newer. For translations, including the Russian UI, you also need gettext: `brew install gettext`.
 
 ```bash
-./scripts/build.sh                    # -> build/devilutionx.app
+./scripts/build.sh                    # -> build/Diablo 4K.app
 ./scripts/run.sh --profile 1080p-x3   # run in 1920x1080, x3 on a 5K Retina iMac
 ```
 

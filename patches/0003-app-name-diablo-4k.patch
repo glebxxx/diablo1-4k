@@ -1,0 +1,124 @@
+diff --git a/CMake/Tests.cmake b/CMake/Tests.cmake
+index b6ea2d6..355604a 100644
+--- a/CMake/Tests.cmake
++++ b/CMake/Tests.cmake
+@@ -60,6 +60,7 @@ set(standalone_tests
+   palette_blending_test
+   parse_int_test
+   path_test
++  paths_test
+   vision_test
+   random_test
+   rectangle_test
+@@ -165,6 +166,7 @@ target_link_dependencies(palette_blending_benchmark
+ )
+ target_link_dependencies(parse_int_test PRIVATE libdevilutionx_parse_int)
+ target_link_dependencies(path_test PRIVATE libdevilutionx_pathfinding libdevilutionx_direction app_fatal_for_testing)
++target_link_dependencies(paths_test PRIVATE libdevilutionx_paths app_fatal_for_testing)
+ target_link_dependencies(vision_test PRIVATE libdevilutionx_vision)
+ target_link_dependencies(path_benchmark PRIVATE libdevilutionx_pathfinding app_fatal_for_testing)
+ target_link_dependencies(random_test PRIVATE libdevilutionx_random)
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index da178b1..b040b08 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -447,10 +447,23 @@ include(functions/set_relative_file_macro)
+ set_relative_file_macro(${BIN_TARGET})
+ 
+ if(APPLE)
+-  set(MACOSX_BUNDLE_GUI_IDENTIFIER com.diasurgical.devilutionx)
++  # The fork's app name and bundle id. The bundle directory keeps the target
++  # name (devilutionx.app); scripts/build.sh renames it when packaging.
++  # -DDIABLO4K_BUNDLE_NAME=devilutionx -DDIABLO4K_BUNDLE_ID=com.diasurgical.devilutionx
++  # restores the upstream values.
++  set(DIABLO4K_BUNDLE_NAME "Diablo 4K" CACHE STRING "macOS app name (CFBundleName, CFBundleDisplayName)")
++  set(DIABLO4K_BUNDLE_ID "io.github.glebxxx.diablo1-4k" CACHE STRING "macOS bundle identifier (CFBundleIdentifier)")
++  set(MACOSX_BUNDLE_GUI_IDENTIFIER "${DIABLO4K_BUNDLE_ID}")
+   set(MACOSX_BUNDLE_COPYRIGHT Unlicense)
+-  set(MACOSX_BUNDLE_BUNDLE_NAME devilutionx)
+-  set(MACOSX_BUNDLE_DISPLAY_NAME DevilutionX)
++  set(MACOSX_BUNDLE_BUNDLE_NAME "${DIABLO4K_BUNDLE_NAME}")
++  if(DIABLO4K_BUNDLE_NAME STREQUAL "devilutionx")
++    set(MACOSX_BUNDLE_DISPLAY_NAME DevilutionX)
++  else()
++    set(MACOSX_BUNDLE_DISPLAY_NAME "${DIABLO4K_BUNDLE_NAME}")
++  endif()
++  target_compile_definitions(libdevilutionx PRIVATE
++    DIABLO4K_APP_NAME="${MACOSX_BUNDLE_DISPLAY_NAME}"
++    DIABLO4K_APP_ID="${DIABLO4K_BUNDLE_ID}")
+   set(MACOSX_BUNDLE_INFO_STRING ${PROJECT_VERSION})
+   set(MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION})
+   set(MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION})
+@@ -483,9 +496,9 @@ if(APPLE)
+   if(MACOSX_STANDALONE_APP_BUNDLE)
+       install(CODE "
+         include(BundleUtilities)
+-        fixup_bundle(${CMAKE_BINARY_DIR}/${MACOSX_BUNDLE_BUNDLE_NAME}.app \"\" \"\")
++        fixup_bundle(\"$<TARGET_BUNDLE_DIR:${BIN_TARGET}>\" \"\" \"\")
+         # fixup_bundle invalidates any existing code signature, so re-sign.
+-        execute_process(COMMAND codesign --force --deep --sign - ${CMAKE_BINARY_DIR}/${MACOSX_BUNDLE_BUNDLE_NAME}.app)
++        execute_process(COMMAND codesign --force --deep --sign - \"$<TARGET_BUNDLE_DIR:${BIN_TARGET}>\")
+         "
+         COMPONENT Runtime)
+   endif()
+diff --git a/Source/utils/display.cpp b/Source/utils/display.cpp
+index b57438f..943d50a 100644
+--- a/Source/utils/display.cpp
++++ b/Source/utils/display.cpp
+@@ -512,9 +512,15 @@ bool SpawnWindow(const char *lpWindowName)
+ #endif
+ 
+ #ifdef USE_SDL3
++#if defined(DIABLO4K_APP_NAME) && defined(DIABLO4K_APP_ID)
++	SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_NAME_STRING, DIABLO4K_APP_NAME);
++	SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_VERSION_STRING, PROJECT_VERSION);
++	SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_IDENTIFIER_STRING, DIABLO4K_APP_ID);
++#else
+ 	SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_NAME_STRING, PROJECT_NAME);
+ 	SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_VERSION_STRING, PROJECT_VERSION);
+ 	SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_IDENTIFIER_STRING, "org.diasurgical.devilutionx");
++#endif
+ 	SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_URL_STRING, "https://devilutionx.com");
+ 	SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_TYPE_STRING, "game");
+ 
+diff --git a/test/paths_test.cpp b/test/paths_test.cpp
+new file mode 100644
+index 0000000..40a5f6c
+--- /dev/null
++++ b/test/paths_test.cpp
+@@ -0,0 +1,35 @@
++#include <gtest/gtest.h>
++
++#include <cstdlib>
++#include <string>
++#include <string_view>
++
++#include "utils/paths.h"
++
++namespace devilution {
++namespace {
++
++std::string Normalize(std::string path)
++{
++	for (char &c : path) {
++		if (c == '\\')
++			c = '/';
++	}
++	return path;
++}
++
++// Settings, saves and MPQs live in SDL_GetPrefPath("diasurgical", "devilution").
++// Renaming the app bundle must not move them, or existing saves are lost.
++TEST(PathsTest, PrefPathIsDiasurgicalDevilution)
++{
++#if !defined(_WIN32) && !defined(__APPLE__)
++	const std::string dataHome = ::testing::TempDir() + "paths_test_data";
++	ASSERT_EQ(setenv("XDG_DATA_HOME", dataHome.c_str(), 1), 0);
++#endif
++	const std::string prefPath = Normalize(paths::PrefPath());
++	EXPECT_TRUE(prefPath.ends_with("/diasurgical/devilution/")) << prefPath;
++	EXPECT_EQ(Normalize(paths::ConfigPath()), prefPath);
++}
++
++} // namespace
++} // namespace devilution

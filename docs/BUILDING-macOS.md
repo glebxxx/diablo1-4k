@@ -15,7 +15,7 @@ The app builds natively on Intel and Apple Silicon Macs with only Apple's Comman
 ## Build
 
 ```bash
-scripts/build.sh                    # Release build -> build/devilutionx.app
+scripts/build.sh                    # Release build -> build/Diablo 4K.app
 scripts/build.sh RelWithDebInfo     # other build types
 BUILD_DIR=/tmp/dvx scripts/build.sh # another build folder
 scripts/build.sh Release -DUSE_SDL3=ON   # extra CMake arguments are passed through
@@ -25,15 +25,26 @@ The script:
 
 1. configures `devilutionx/` with `-DCMAKE_OSX_DEPLOYMENT_TARGET=13.3`, `-DBUILD_TESTING=OFF` and every `DEVILUTIONX_SYSTEM_*` library turned off;
 2. builds with all CPU cores;
-3. signs the bundle ad hoc (`codesign --sign -`);
-4. prints `devilutionx --version`.
+3. copies `build/devilutionx.app` to `build/Diablo 4K.app` (the name comes from the bundle's `CFBundleName`);
+4. signs that bundle ad hoc (`codesign --sign -`), verifies the signature and checks its `Info.plist` with `scripts/check-app-bundle.sh`;
+5. prints `devilutionx --version`.
+
+### App name and bundle id
+
+The fork's app is called **Diablo 4K** (`CFBundleName`, `CFBundleDisplayName`), with the bundle id `io.github.glebxxx.diablo1-4k`. Both are CMake cache variables:
+
+```bash
+scripts/build.sh Release -DDIABLO4K_BUNDLE_NAME=devilutionx -DDIABLO4K_BUNDLE_ID=com.diasurgical.devilutionx   # upstream values
+```
+
+The bundle inside the build tree is always `devilutionx.app`, and the executable is always `Contents/MacOS/devilutionx`. Settings, saves and MPQs stay in `~/Library/Application Support/diasurgical/devilution/`: that folder does not depend on the app name or bundle id. macOS treats a new bundle id as a new app, so permission prompts (e.g. Input Monitoring for controllers), "Saved Application State" and the Dock entry start fresh.
 
 A clean build takes a few minutes. The app targets macOS 13.3 or newer and the architecture of the building Mac.
 
 Check that translations were built:
 
 ```bash
-ls build/devilutionx.app/Contents/Resources/ru.gmo
+ls "build/Diablo 4K.app/Contents/Resources/ru.gmo"
 ```
 
 ## Game data
@@ -52,7 +63,7 @@ Settings live in `~/Library/Application Support/diasurgical/devilution/diablo.in
 ## Run
 
 ```bash
-open build/devilutionx.app        # like double-clicking it
+open "build/Diablo 4K.app"       # like double-clicking it
 scripts/run.sh                    # same, from the terminal
 scripts/run.sh --list             # list display profiles
 scripts/run.sh --profile 1080p-x3 # run with a display profile
