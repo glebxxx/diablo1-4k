@@ -43,6 +43,13 @@ fi
 # Ad-hoc signature so the bundle has a valid seal on this machine.
 codesign --force --deep --sign - "$APP"
 codesign --verify --deep --strict "$APP"
-"$ROOT/scripts/check-app-bundle.sh" "$APP"
+# The Info.plist must match what CMake was configured with (the fork's values unless overridden).
+cache_value() { sed -n "s/^$1:[A-Z]*=//p" "$BUILD_DIR/CMakeCache.txt"; }
+EXPECT_NAME="$(cache_value DIABLO4K_BUNDLE_NAME)"
+EXPECT_ID="$(cache_value DIABLO4K_BUNDLE_ID)"
+EXPECT_DISPLAY_NAME="$EXPECT_NAME"
+[ "$EXPECT_NAME" != devilutionx ] || EXPECT_DISPLAY_NAME=DevilutionX # upstream's display name
+EXPECT_NAME="$EXPECT_NAME" EXPECT_DISPLAY_NAME="$EXPECT_DISPLAY_NAME" EXPECT_ID="$EXPECT_ID" \
+	"$ROOT/scripts/check-app-bundle.sh" "$APP"
 "$APP/Contents/MacOS/devilutionx" --version
 echo "Built: $APP"
