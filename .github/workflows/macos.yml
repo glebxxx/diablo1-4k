@@ -58,8 +58,9 @@ jobs:
           key: macos-${{ matrix.arch }}-v1-${{ github.sha }}
           restore-keys: macos-${{ matrix.arch }}-v1-
 
-      # Same flags as scripts/build.sh; every DEVILUTIONX_SYSTEM_* dependency is vendored so the app
-      # does not pick up Homebrew libraries preinstalled on the runner.
+      # Same flags as scripts/build.sh, plus the remaining optional DEVILUTIONX_SYSTEM_* dependencies vendored so the
+      # app does not pick up Homebrew libraries preinstalled on the runner. zlib and bzip2 come from the macOS SDK
+      # (the vendored zlib does not compile against the macOS 15 SDK: fdopen macro clash).
       - name: Configure
         run: |
           command -v msgfmt
@@ -75,8 +76,6 @@ jobs:
             -DDEVILUTIONX_SYSTEM_LIBPNG=OFF \
             -DDEVILUTIONX_SYSTEM_LIBSODIUM=OFF \
             -DDEVILUTIONX_SYSTEM_LUA=OFF \
-            -DDEVILUTIONX_SYSTEM_BZIP2=OFF \
-            -DDEVILUTIONX_SYSTEM_ZLIB=OFF \
             -DDEVILUTIONX_SYSTEM_SDL_AUDIOLIB=OFF \
             -DDEVILUTIONX_SYSTEM_SHEENBIDI=OFF \
             -DDEVILUTIONX_SYSTEM_UNORDERED_DENSE=OFF \
