@@ -447,10 +447,23 @@ include(functions/set_relative_file_macro)
 set_relative_file_macro(${BIN_TARGET})
 
 if(APPLE)
-  set(MACOSX_BUNDLE_GUI_IDENTIFIER com.diasurgical.devilutionx)
+  # The fork's app name and bundle id. The bundle directory keeps the target
+  # name (devilutionx.app); scripts/build.sh renames it when packaging.
+  # -DDIABLO4K_BUNDLE_NAME=devilutionx -DDIABLO4K_BUNDLE_ID=com.diasurgical.devilutionx
+  # restores the upstream values.
+  set(DIABLO4K_BUNDLE_NAME "Diablo 4K" CACHE STRING "macOS app name (CFBundleName, CFBundleDisplayName)")
+  set(DIABLO4K_BUNDLE_ID "io.github.glebxxx.diablo1-4k" CACHE STRING "macOS bundle identifier (CFBundleIdentifier)")
+  set(MACOSX_BUNDLE_GUI_IDENTIFIER "${DIABLO4K_BUNDLE_ID}")
   set(MACOSX_BUNDLE_COPYRIGHT Unlicense)
-  set(MACOSX_BUNDLE_BUNDLE_NAME devilutionx)
-  set(MACOSX_BUNDLE_DISPLAY_NAME DevilutionX)
+  set(MACOSX_BUNDLE_BUNDLE_NAME "${DIABLO4K_BUNDLE_NAME}")
+  if(DIABLO4K_BUNDLE_NAME STREQUAL "devilutionx")
+    set(MACOSX_BUNDLE_DISPLAY_NAME DevilutionX)
+  else()
+    set(MACOSX_BUNDLE_DISPLAY_NAME "${DIABLO4K_BUNDLE_NAME}")
+  endif()
+  target_compile_definitions(libdevilutionx PRIVATE
+    DIABLO4K_APP_NAME="${MACOSX_BUNDLE_DISPLAY_NAME}"
+    DIABLO4K_APP_ID="${DIABLO4K_BUNDLE_ID}")
   set(MACOSX_BUNDLE_INFO_STRING ${PROJECT_VERSION})
   set(MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION})
   set(MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION})
@@ -483,9 +496,9 @@ if(APPLE)
   if(MACOSX_STANDALONE_APP_BUNDLE)
       install(CODE "
         include(BundleUtilities)
-        fixup_bundle(${CMAKE_BINARY_DIR}/${MACOSX_BUNDLE_BUNDLE_NAME}.app \"\" \"\")
+        fixup_bundle(\"$<TARGET_BUNDLE_DIR:${BIN_TARGET}>\" \"\" \"\")
         # fixup_bundle invalidates any existing code signature, so re-sign.
-        execute_process(COMMAND codesign --force --deep --sign - ${CMAKE_BINARY_DIR}/${MACOSX_BUNDLE_BUNDLE_NAME}.app)
+        execute_process(COMMAND codesign --force --deep --sign - \"$<TARGET_BUNDLE_DIR:${BIN_TARGET}>\")
         "
         COMPONENT Runtime)
   endif()

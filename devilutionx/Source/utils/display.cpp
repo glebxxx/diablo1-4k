@@ -512,9 +512,15 @@ bool SpawnWindow(const char *lpWindowName)
 #endif
 
 #ifdef USE_SDL3
+#if defined(DIABLO4K_APP_NAME) && defined(DIABLO4K_APP_ID)
+	SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_NAME_STRING, DIABLO4K_APP_NAME);
+	SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_VERSION_STRING, PROJECT_VERSION);
+	SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_IDENTIFIER_STRING, DIABLO4K_APP_ID);
+#else
 	SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_NAME_STRING, PROJECT_NAME);
 	SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_VERSION_STRING, PROJECT_VERSION);
 	SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_IDENTIFIER_STRING, "org.diasurgical.devilutionx");
+#endif
 	SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_URL_STRING, "https://devilutionx.com");
 	SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_TYPE_STRING, "game");
 

@@ -60,6 +60,7 @@ set(standalone_tests
   palette_blending_test
   parse_int_test
   path_test
+  paths_test
   vision_test
   random_test
   rectangle_test
@@ -165,6 +166,7 @@ target_link_dependencies(palette_blending_benchmark
 )
 target_link_dependencies(parse_int_test PRIVATE libdevilutionx_parse_int)
 target_link_dependencies(path_test PRIVATE libdevilutionx_pathfinding libdevilutionx_direction app_fatal_for_testing)
+target_link_dependencies(paths_test PRIVATE libdevilutionx_paths app_fatal_for_testing)
 target_link_dependencies(vision_test PRIVATE libdevilutionx_vision)
 target_link_dependencies(path_benchmark PRIVATE libdevilutionx_pathfinding app_fatal_for_testing)
 target_link_dependencies(random_test PRIVATE libdevilutionx_random)
