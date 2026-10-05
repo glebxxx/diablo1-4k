@@ -641,6 +641,11 @@ void Gl1DrawClxBlendedTRN(Point position, ClxSprite clx, const uint8_t *trn)
 	glColor4f(1, 1, 1, 1);
 }
 
+bool Gl1HasHdSprite(ClxSprite clx)
+{
+	return textureCache.HasHdSprite(clx);
+}
+
 void Gl1DrawClxWithLight(Point position, ClxSprite clx, uint8_t lightLevel)
 {
 	auto &tex = textureCache.GetSpriteTexture(clx, nullptr);

@@ -174,7 +174,8 @@ protected:
 
 	void DrawClxLit(Point position, ClxSprite clx, int lightTableIndex) override
 	{
-		if (lightingMode_ == LightingMode::Vertex) {
+		// HD sprites are unlit; like Vertex lighting, they are darkened by the vertex colour.
+		if (lightingMode_ == LightingMode::Vertex || (lightTableIndex != 0 && Gl1HasHdSprite(clx))) {
 			Gl1DrawClxWithLight(position, clx, static_cast<uint8_t>(lightTableIndex));
 		} else if (lightTableIndex != 0) {
 			Gl1DrawClxTRN(position, clx, LightTables[lightTableIndex].data());
@@ -185,7 +186,7 @@ protected:
 
 	void DrawClxLitBlended(Point position, ClxSprite clx, int lightTableIndex) override
 	{
-		if (lightingMode_ == LightingMode::Vertex) {
+		if (lightingMode_ == LightingMode::Vertex || (lightTableIndex != 0 && Gl1HasHdSprite(clx))) {
 			Gl1DrawClxWithLightBlended(position, clx, static_cast<uint8_t>(lightTableIndex));
 		} else if (lightTableIndex != 0) {
 			Gl1DrawClxBlendedTRN(position, clx, LightTables[lightTableIndex].data());

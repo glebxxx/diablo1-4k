@@ -130,6 +130,12 @@ public:
 	Gl1CachedTexture &GetSpriteTexture(ClxSprite clx, const uint8_t *trn);
 
 	/**
+	 * @brief Whether the untranslated sprite has an HD texture. Looks it up if needed, but never
+	 * creates a 1x texture.
+	 */
+	bool HasHdSprite(ClxSprite clx);
+
+	/**
 	 * @brief Get or create a cached texture for a dungeon tile.
 	 * @param frameData Raw frame data pointer (from GetDunFrame).
 	 * @param tileType The tile type (square, triangle, etc.).
@@ -245,6 +251,8 @@ private:
 	bool hdIndexLoaded_ = false;
 	/** Keys whose HD image failed to load (logged once, not retried). */
 	std::unordered_set<Gl1HdTextureKey, Gl1HdTextureKeyHash> hdFailed_;
+	/** Untranslated sprites known to have no HD texture (see HasHdSprite). */
+	std::unordered_set<const uint8_t *> hdMissingSprites_;
 	/** Frames kept at 1x because colour cycling animates them. */
 	size_t hdAnimatedSkipped_ = 0;
 	HdDumper hdDumper_ { HdDumper::DirFromEnvironment() };

@@ -89,7 +89,7 @@ key = SHA-256( u16le(width) ‖ u16le(height) ‖ u16le(pixel) for every pixel )
 ```
 
 - Pixels go row by row from the **top-left** corner.
-- `pixel` = the palette index **after** any colour translation (TRN) the game applied, or `0x0100` for a transparent pixel.
+- `pixel` = the palette index **after** any colour translation (TRN) the game applied, or `0x0100` for a transparent pixel. Light tables are not colour translations: lighting never changes a key (see below).
 - `key` is written as 64 lowercase hex digits (upper case is accepted when reading).
 
 In Python:
@@ -106,8 +106,10 @@ def frame_key(width, height, pixels):  # pixels: palette index, or None for tran
 
 What the engine hashes:
 
-- **Sprites** (CEL/CL2/CLX frames: monsters, players, objects, items, missiles, UI): the decoded frame, `width × height` as stored.
-- **Dungeon tiles** (level CEL micro-tiles): 32 pixels wide, decoded as the OpenGL renderer draws them. Height is 32 for squares and trapezoids, 31 for triangles. Pixels outside the tile's shape are transparent. The light table is **not** part of the key: one HD tile serves every light level and is darkened when drawn.
+- **Sprites** (CEL/CL2/CLX frames: monsters, players, objects, items, missiles, UI): the decoded frame, `width × height` as stored. Recoloured variants (unique monsters, player armour classes, stone curse, infravision) are hashed after their TRN and need their own entries. Lighting is not: a lit sprite is looked up **unlit** and darkened by a vertex colour, in both *Lighting* modes.
+- **Dungeon tiles** (level CEL micro-tiles): 32 pixels wide, decoded as the OpenGL renderer draws them, **after** the engine re-encodes floor cels at load time (it strips triangle padding and splits foliage off floor tiles). Height is 32 for squares and trapezoids, 31 for triangles, and 16 for the foliage overlays split off transparent floor squares (grass and similar; drawn as `TransparentSquare`, upper half only). Pixels outside the tile's shape are transparent. The light table is **not** part of the key: one HD tile serves every light level and is darkened when drawn.
+
+Because of the re-encoding, tile frames cannot be cut straight out of the MPQ's CEL files. Get tile keys from dump mode.
 
 ### The safest way to get keys: dump mode
 
@@ -122,7 +124,7 @@ These are exactly the frames and keys the loader looks up. A pack builder can up
 
 ## What stays 1x in this version
 
-- **Colour-cycled frames.** Frames using palette indices that colour cycling animates on the current level (caves, hell, crypt: 1–31; nest: 1–15; nothing in town and the cathedral) keep the 1x texture, because a fixed RGBA image cannot follow the animation.
+- **Colour-cycled frames.** Frames using palette indices that change over time or with light on the current level (caves, hell, crypt: 1–31; nest: 1–15; nothing in town and the cathedral) keep the 1x texture, because a fixed RGBA image cannot follow them. This covers colour cycling (water, lava) and the light tables that keep lava glowing and give hell's blood walls their own colours, so it applies whether *Color Cycling* is on or off.
 - **Palette variants.** The key contains palette indices, not colours. The same frame drawn with another palette (for example the random dungeon palettes) uses the same HD image.
 - **Brightness setting.** HD images ignore *Brightness Correction*. Fades and lighting work (they are drawn on top / as vertex colour).
 - Frames not in any pack, frames whose image fails to load (logged once), and everything in the software renderer.

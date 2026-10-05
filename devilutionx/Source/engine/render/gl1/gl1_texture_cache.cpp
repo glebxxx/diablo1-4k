@@ -9,12 +9,15 @@
 #include "engine/render/gl1/gl1_texture_cache.h"
 
 #include "engine/render/gl1/gl1_gl.h"
+#include <algorithm>
 #include <cstring>
+#include <limits>
 
 #include "engine/palette.h"
 #include "engine/render/dun_render.hpp"
 #include "levels/dun_tile.hpp"
 #include "levels/gendung.h"
+#include "lighting.h"
 #include "options.h"
 #include "utils/clx_decode.hpp"
 #include "utils/log.hpp"
@@ -97,13 +100,13 @@ uint8_t GetTilePixelAlpha(MaskType maskType, TileType tileType, int x, int buffe
 }
 
 /**
- * @brief Palette indices that colour cycling animates on the current level.
- * HD textures cannot follow the animation, so frames using them stay 1x.
+ * @brief Palette indices that change with time or light on the current level: colour cycling
+ * (water, lava), and the light tables that keep lava lit and give blood walls their own colours.
+ * HD textures cannot follow them, so frames using them stay 1x. The range does not depend on the
+ * Color Cycling option, so toggling it needs no cache flush.
  */
 HdAnimatedRange CurrentAnimatedRange()
 {
-	if (!*GetOptions().Graphics.colorCycling)
-		return {};
 	switch (leveltype) {
 	case DTYPE_CAVES:
 	case DTYPE_HELL:
@@ -121,6 +124,40 @@ HdAnimatedRange CurrentAnimatedRange()
 bool Gl1TextureCache::HdTexturesEnabled()
 {
 	return *GetOptions().Graphics.hdTextures;
+}
+
+namespace {
+
+/** @brief Light tables are drawn as a vertex colour on HD sprites, never part of their key. */
+bool IsLightTable(const uint8_t *trn)
+{
+	for (size_t i = 0; i < NumLightingLevels; i++) {
+		if (trn == LightTables[i].data())
+			return true;
+	}
+	return false;
+}
+
+} // namespace
+
+bool Gl1TextureCache::HasHdSprite(ClxSprite clx)
+{
+	if (!HdTexturesEnabled())
+		return false;
+	FlushIfNeeded();
+	const Gl1SpriteCacheKey key { clx.pixelData(), nullptr };
+	if (const auto it = spriteCache_.find(key); it != spriteCache_.end())
+		return it->second.hd;
+	if (hdMissingSprites_.contains(clx.pixelData()))
+		return false;
+	Gl1CachedTexture entry;
+	const HdDumpInfo dumpInfo { "sprite", -1, false, static_cast<int>(leveltype) };
+	if (!TryUseHd(DecodeClxToIndexed(clx, nullptr), HdSpriteVariant, {}, dumpInfo, entry)) {
+		hdMissingSprites_.insert(clx.pixelData());
+		return false;
+	}
+	spriteCache_.emplace(key, entry);
+	return true;
 }
 
 Gl1CachedTexture &Gl1TextureCache::GetSpriteTexture(ClxSprite clx, const uint8_t *trn)
@@ -150,7 +187,7 @@ Gl1CachedTexture &Gl1TextureCache::GetSpriteTexture(ClxSprite clx, const uint8_t
 	}
 
 	Gl1CachedTexture &entry = spriteCache_[key];
-	if (HdTexturesEnabled() || hdDumper_.enabled()) {
+	if ((HdTexturesEnabled() || hdDumper_.enabled()) && !IsLightTable(trn)) {
 		const HdDumpInfo dumpInfo { "sprite", -1, trn != nullptr, static_cast<int>(leveltype) };
 		if (TryUseHd(DecodeClxToIndexed(clx, trn), HdSpriteVariant, {}, dumpInfo, entry))
 			return entry;
@@ -551,6 +588,7 @@ void Gl1TextureCache::ClearPaletteDependent()
 		}
 	}
 	tileCache_.clear();
+	hdMissingSprites_.clear();
 
 	paletteGeneration_ = 0;
 }
@@ -575,7 +613,7 @@ bool Gl1TextureCache::TryUseHd(const HdIndexedFrame &frame, uint8_t variant, std
 	}
 	if (!hdIndexLoaded_) {
 		hdIndexLoaded_ = true;
-		const std::string packsRoot = paths::PrefPath() + "hd";
+		const std::string packsRoot = paths::ConfigPath() + "hd";
 		hdIndex_.AddPacksIn(packsRoot);
 		LogInfo("HD textures: {} frames in {}", hdIndex_.size(), packsRoot);
 	}
@@ -627,7 +665,9 @@ bool Gl1TextureCache::TryUseHd(const HdIndexedFrame &frame, uint8_t variant, std
 
 void Gl1TextureCache::TouchHd(const Gl1HdTextureKey &key, size_t bytes)
 {
-	hdLru_.SetBudget(static_cast<size_t>(*GetOptions().Graphics.hdTextureMemory) * 1024 * 1024);
+	// 64-bit arithmetic: 4096 MB does not fit a 32-bit size_t.
+	const uint64_t budget = static_cast<uint64_t>(*GetOptions().Graphics.hdTextureMemory) << 20;
+	hdLru_.SetBudget(static_cast<size_t>(std::min<uint64_t>(budget, std::numeric_limits<size_t>::max())));
 	hdLru_.Touch(key, bytes);
 	for (const Gl1HdTextureKey &evicted : hdLru_.TakeEvictions()) {
 		const auto it = hdTextures_.find(evicted);

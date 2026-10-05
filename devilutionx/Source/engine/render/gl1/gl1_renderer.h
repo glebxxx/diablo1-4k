@@ -97,6 +97,11 @@ void Gl1DrawClxBlendedTRN(Point position, ClxSprite clx, const uint8_t *trn);
 void Gl1DrawClxWithLight(Point position, ClxSprite clx, uint8_t lightLevel);
 
 /**
+ * @brief Whether the unlit sprite has an HD texture (HD Textures on and found in a pack).
+ */
+bool Gl1HasHdSprite(ClxSprite clx);
+
+/**
  * @brief Draw a CLX sprite with vertex lighting and transparency blending.
  * @param lightLevel 0 = fully lit, 15 = fully dark.
  */
