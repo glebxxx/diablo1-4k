@@ -10,6 +10,7 @@
 
 #include <gtest/gtest.h>
 
+#include "engine/backbuffer_state.hpp"
 #include "engine/dx.h"
 #include "engine/layered_present.hpp"
 #include "engine/palette.h"
@@ -26,6 +27,27 @@
 
 namespace devilution {
 namespace {
+
+TEST(LayeredPerfLogTest, SummarizeFrameTimes)
+{
+	EXPECT_EQ(SummarizeFrameTimes({}).average, 0);
+	EXPECT_EQ(SummarizeFrameTimes({}).p95, 0);
+
+	const std::vector<float> single { 4.5F };
+	EXPECT_FLOAT_EQ(SummarizeFrameTimes(single).average, 4.5);
+	EXPECT_FLOAT_EQ(SummarizeFrameTimes(single).p95, 4.5);
+
+	// 300 frames (one log entry) of 1..300 ms in reverse order: p95 is the 285th smallest.
+	std::vector<float> frames;
+	for (int i = 300; i >= 1; --i)
+		frames.push_back(static_cast<float>(i));
+	EXPECT_DOUBLE_EQ(SummarizeFrameTimes(frames).average, 150.5);
+	EXPECT_FLOAT_EQ(SummarizeFrameTimes(frames).p95, 285);
+
+	// Nearest rank rounds up: 95 % of 10 samples is the 10th.
+	const std::vector<float> ten { 1, 1, 1, 1, 1, 1, 1, 1, 1, 9 };
+	EXPECT_FLOAT_EQ(SummarizeFrameTimes(ten).p95, 9);
+}
 
 #ifdef DVL_LAYERED_RENDERER
 
@@ -277,6 +299,41 @@ TEST(LayeredComposeTest, WorldFillsLetterboxBars)
 			}
 		}
 	}
+}
+
+TEST(LayeredComposeTest, EndingTheLayeredModeRedrawsEverything)
+{
+	const LayeredFrameSetup setup({ 1920, 1080 }, { 960, 540 }, 2);
+	ASSERT_TRUE(PresentLayered());
+
+	// The back buffer holds only the keyed UI layer, so the upstream path must redraw everything.
+	RedrawComplete();
+	EndLayeredMode();
+	EXPECT_FALSE(PresentLayered());
+	EXPECT_TRUE(IsRedrawEverything());
+
+	// Without a layered frame there is nothing to end.
+	RedrawComplete();
+	EndLayeredMode();
+	EXPECT_FALSE(IsRedrawEverything());
+}
+
+TEST(LayeredComposeTest, BeginLayeredFrameEndsTheModeWhenNoLongerLayered)
+{
+	const LayeredFrameSetup setup({ 1920, 1080 }, { 960, 540 }, 2);
+	ASSERT_TRUE(PresentLayered());
+
+	// E.g. the renderer output became unusable: the next frame is drawn the upstream way.
+	SetWorldViewForTesting(ComputeLegacyWorldView(setup.View().uiSize, MainPanelHeight));
+	BeginLayeredFrame();
+	EXPECT_FALSE(PresentLayered());
+
+	// Layered again: the frame starts with a transparent UI layer.
+	SetWorldViewForTesting(setup.View());
+	*GlobalBackBuffer().at(10, 10) = 200;
+	BeginLayeredFrame();
+	EXPECT_TRUE(PresentLayered());
+	EXPECT_EQ(*GlobalBackBuffer().at(10, 10), UiKeyTransparent);
 }
 
 TEST(LayeredComposeTest, NotLayeredWithoutAFrame)

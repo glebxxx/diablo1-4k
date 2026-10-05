@@ -6,10 +6,16 @@
 #include "engine/layered_present.hpp"
 
 #include <algorithm>
+#include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
+#include <format>
 #include <initializer_list>
+#include <string>
+#include <string_view>
 #include <vector>
 
 #include "engine/backbuffer_state.hpp"
@@ -131,6 +137,61 @@ void UpdateStreamingTexture(SDL_Texture *texture, ExpandFn &&expand)
 	expand(static_cast<uint32_t *>(pixels), pitch);
 	SDL_UnlockTexture(texture);
 }
+
+using PerfClock = std::chrono::steady_clock;
+
+/** @brief Layered frames per performance log entry. */
+constexpr size_t PerfLogFrames = 300;
+
+enum PerfStage : uint8_t {
+	PerfWorldDraw,
+	PerfUiDraw,
+	PerfExpand,
+	PerfPresent,
+	PerfFrame,
+	NumPerfStages,
+};
+
+constexpr std::string_view PerfStageNames[] = { "world", "ui", "expand", "present", "frame" };
+
+struct PerfLogState {
+	bool enabled;
+	/** @brief Whether a layered frame is being timed (between `FrameStart` and `FrameEnd`). */
+	bool inFrame;
+	PerfClock::time_point frameStart;
+	PerfClock::time_point worldStart;
+	PerfClock::time_point presentStart;
+	double worldMs;
+	double expandMs;
+	std::array<std::vector<float>, NumPerfStages> samples;
+};
+
+bool IsPerfLogRequested()
+{
+	const char *value = std::getenv("DEVILUTIONX_PERF_LOG");
+	return value != nullptr && std::string_view(value) == "1";
+}
+
+PerfLogState PerfLog { IsPerfLogRequested(), false, {}, {}, {}, 0, 0, {} };
+
+double MillisecondsBetween(PerfClock::time_point start, PerfClock::time_point end)
+{
+	return std::chrono::duration<double, std::milli>(end - start).count();
+}
+
+void LogPerfSamples()
+{
+	const WorldView &view = GetWorldView();
+	std::string message = std::format("Layered perf, {} frames, O {}x{}, U {}x{}, ws {}, W {}x{}, avg/p95 ms:",
+	    PerfLog.samples[PerfFrame].size(), view.outputSize.width, view.outputSize.height,
+	    view.uiSize.width, view.uiSize.height, view.ws, view.size.width, view.size.height);
+	for (size_t stage = 0; stage < NumPerfStages; ++stage) {
+		const PerfSummary summary = SummarizeFrameTimes(PerfLog.samples[stage]);
+		message += std::format(" {} {:.2f}/{:.2f}", PerfStageNames[stage], summary.average, summary.p95);
+		PerfLog.samples[stage].clear();
+	}
+	Log("{}", message);
+}
 #endif
 
 } // namespace
@@ -170,6 +231,20 @@ void ExpandUiKeyed(const uint8_t *src, const uint8_t *half, int srcPitch, uint32
 			}
 		}
 	}
+}
+
+PerfSummary SummarizeFrameTimes(std::span<const float> milliseconds)
+{
+	if (milliseconds.empty())
+		return { 0, 0 };
+	std::vector<float> sorted(milliseconds.begin(), milliseconds.end());
+	std::sort(sorted.begin(), sorted.end());
+	double sum = 0;
+	for (const float ms : sorted)
+		sum += ms;
+	// Nearest rank: ceil(0.95 * n), at least 1
+	const size_t rank = (sorted.size() * 95 + 99) / 100;
+	return { sum / static_cast<double>(sorted.size()), sorted[rank - 1] };
 }
 
 void ComposeLayersCpu(const WorldView &view, const LayeredFrame &frame, const uint32_t lut[256], Size output, std::span<uint32_t> out)
@@ -218,8 +293,10 @@ void BeginLayeredFrame()
 		CalcViewportGeometry();
 		RedrawEverything();
 	}
-	if (!IsLayeredActive())
+	if (!IsLayeredActive()) {
+		EndLayeredMode();
 		return;
+	}
 	UpdateLayeredBuffers();
 	if (!LayeredBuffersMatch(GetWorldView())) {
 		EndLayeredMode();
@@ -242,6 +319,8 @@ void EndLayeredMode()
 		if (output != nullptr)
 			SDL_FillRect(output, nullptr, SDL_MapRGB(output->format, 0, 0, 0));
 	}
+	// The back buffer holds the keyed UI layer, not a complete frame.
+	RedrawEverything();
 }
 
 void RebuildUiKeyRemap()
@@ -297,6 +376,7 @@ bool LayeredPresent()
 	EnsureTexture(WorldTexture, WorldTextureSize, view.size, SDL_BLENDMODE_NONE);
 	EnsureTexture(UiTexture, UiTextureSize, view.uiSize, SDL_BLENDMODE_BLEND);
 
+	const PerfClock::time_point expandStart = PerfLog.inFrame ? PerfClock::now() : PerfClock::time_point {};
 	// Rebuilt every present: fades, brightness and colour cycling only change `system_palette`.
 	uint32_t lut[256];
 	BuildPaletteLut32(system_palette.data(), lut);
@@ -306,6 +386,8 @@ bool LayeredPresent()
 	UpdateStreamingTexture(UiTexture.get(), [&](uint32_t *pixels, int pitch) {
 		ExpandUiKeyed(static_cast<const uint8_t *>(PalSurface->pixels), UiHalfPlane.data(), PalSurface->pitch, pixels, pitch, view.uiSize.width, view.uiSize.height, lut);
 	});
+	if (PerfLog.inFrame)
+		PerfLog.expandMs += MillisecondsBetween(expandStart, PerfClock::now());
 
 	if (SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255) <= -1)
 		ErrSdl();
@@ -366,6 +448,48 @@ void ComposeLayersCpu(Size output, std::span<uint32_t> out)
 		PalSurface->pitch,
 	};
 	ComposeLayersCpu(view, frame, lut, output, out);
+}
+
+void LayeredPerfMark(LayeredPerfEvent event)
+{
+	if (!PerfLog.enabled)
+		return;
+	const PerfClock::time_point now = PerfClock::now();
+	if (event == LayeredPerfEvent::FrameStart) {
+		PerfLog.inFrame = PresentLayered();
+		PerfLog.frameStart = now;
+		PerfLog.worldMs = 0;
+		PerfLog.expandMs = 0;
+		return;
+	}
+	if (!PerfLog.inFrame)
+		return;
+	switch (event) {
+	case LayeredPerfEvent::FrameStart:
+		break;
+	case LayeredPerfEvent::WorldDrawStart:
+		PerfLog.worldStart = now;
+		break;
+	case LayeredPerfEvent::WorldDrawEnd:
+		PerfLog.worldMs += MillisecondsBetween(PerfLog.worldStart, now);
+		break;
+	case LayeredPerfEvent::PresentStart:
+		PerfLog.presentStart = now;
+		break;
+	case LayeredPerfEvent::FrameEnd: {
+		PerfLog.inFrame = false;
+		const double drawMs = MillisecondsBetween(PerfLog.frameStart, PerfLog.presentStart);
+		const double presentMs = MillisecondsBetween(PerfLog.presentStart, now);
+		PerfLog.samples[PerfWorldDraw].push_back(static_cast<float>(PerfLog.worldMs));
+		PerfLog.samples[PerfUiDraw].push_back(static_cast<float>(std::max(0.0, drawMs - PerfLog.worldMs)));
+		PerfLog.samples[PerfExpand].push_back(static_cast<float>(PerfLog.expandMs));
+		PerfLog.samples[PerfPresent].push_back(static_cast<float>(std::max(0.0, presentMs - PerfLog.expandMs)));
+		PerfLog.samples[PerfFrame].push_back(static_cast<float>(MillisecondsBetween(PerfLog.frameStart, now)));
+		if (PerfLog.samples[PerfFrame].size() >= PerfLogFrames)
+			LogPerfSamples();
+		break;
+	}
+	}
 }
 #endif
 

@@ -30,6 +30,7 @@
 #include "engine/backbuffer_state.hpp"
 #include "engine/displacement.hpp"
 #include "engine/dx.h"
+#include "engine/layered_present.hpp"
 #include "engine/point.hpp"
 #include "engine/render/clx_render.hpp"
 #include "engine/render/dun_render.hpp"
@@ -1007,7 +1008,7 @@ void DrawTileContent(const Surface &out, const Lightmap &lightmap, Point tilePos
 #ifdef _DEBUG
 				DebugCoordsMap[tilePosition.x + (tilePosition.y * MAXDUNX)] = targetBufferPosition;
 #endif
-				if (tilePosition.x + 1 < MAXDUNX && tilePosition.y - 1 >= 0 && targetBufferPosition.x + TILE_WIDTH <= gnScreenWidth) {
+				if (tilePosition.x + 1 < MAXDUNX && tilePosition.y - 1 >= 0 && targetBufferPosition.x + TILE_WIDTH <= out.w()) {
 					// Render objects behind walls first to prevent sprites, that are moving
 					// between tiles, from poking through the walls as they exceed the tile bounds.
 					// A proper fix for this would probably be to layout the scene and render by
@@ -1276,8 +1277,12 @@ namespace {
  */
 void DrawGame(const Surface &fullOut, Point position, Displacement offset)
 {
+	// A layered frame draws the world into the world surface, which is the whole view area
+	const bool layered = PresentLayered();
+
 	// Limit rendering to the view area
-	const Surface &out = !*GetOptions().Graphics.zoom
+	const Surface &out = layered ? fullOut
+	    : !*GetOptions().Graphics.zoom
 	    ? fullOut.subregionY(0, gnViewportHeight)
 	    : fullOut.subregionY(0, (gnViewportHeight + 1) / 2);
 
@@ -1285,7 +1290,7 @@ void DrawGame(const Surface &fullOut, Point position, Displacement offset)
 	int rows = tileRows;
 
 	// Skip rendering parts covered by the panels
-	if (CanPanelsCoverView() && (IsLeftPanelOpen() || IsRightPanelOpen())) {
+	if (!layered && CanPanelsCoverView() && (IsLeftPanelOpen() || IsRightPanelOpen())) {
 		columns -= (*GetOptions().Graphics.zoom) ? 2 : 4;
 	}
 
@@ -1322,7 +1327,7 @@ void DrawGame(const Surface &fullOut, Point position, Displacement offset)
 #endif
 
 	Lightmap lightmap = Lightmap::build(*GetOptions().Graphics.perPixelLighting, position, Point {} + offset,
-	    gnScreenWidth, gnViewportHeight, rows, columns,
+	    layered ? out.w() : gnScreenWidth, layered ? out.h() : gnViewportHeight, rows, columns,
 	    out.at(0, 0), out.pitch(), LightTables, FullyLitLightTable, FullyDarkLightTable,
 	    dLight, MicroTileLen);
 
@@ -1330,7 +1335,7 @@ void DrawGame(const Surface &fullOut, Point position, Displacement offset)
 	DrawTileContent(out, lightmap, position, Point {} + offset, rows, columns);
 	DrawOOB(out, lightmap, position, Point {} + offset, rows, columns);
 
-	if (*GetOptions().Graphics.zoom) {
+	if (!layered && *GetOptions().Graphics.zoom) {
 		Zoom(fullOut.subregionY(0, gnViewportHeight));
 	}
 
@@ -1365,7 +1370,9 @@ void DrawView(const Surface &out, Point startPosition)
 #endif
 	Displacement offset = {};
 	CalcFirstTilePosition(startPosition, offset);
-	DrawGame(out, startPosition, offset);
+	LayeredPerfMark(LayeredPerfEvent::WorldDrawStart);
+	DrawGame(PresentLayered() ? WorldBuffer() : out, startPosition, offset);
+	LayeredPerfMark(LayeredPerfEvent::WorldDrawEnd);
 	if (AutomapActive) {
 		DrawAutomap(out.subregionY(0, gnViewportHeight));
 	}
@@ -1376,6 +1383,9 @@ void DrawView(const Surface &out, Point startPosition)
 		RedrawEverything();
 		std::string debugGridText;
 		bool megaTiles = IsDebugGridInMegatiles();
+		// A layered frame has the grid on the (unzoomed) world surface
+		const Surface gridOut = PresentLayered() ? WorldBuffer() : out;
+		const bool zoomed = !PresentLayered() && *GetOptions().Graphics.zoom;
 
 		for (auto [dunCoordVal, pixelCoords] : DebugCoordsMap) {
 			Point dunCoords = { dunCoordVal % MAXDUNX, dunCoordVal / MAXDUNX };
@@ -1383,19 +1393,19 @@ void DrawView(const Surface &out, Point startPosition)
 				continue;
 			if (megaTiles)
 				pixelCoords += Displacement { 0, TILE_HEIGHT / 2 };
-			if (*GetOptions().Graphics.zoom)
+			if (zoomed)
 				pixelCoords *= 2;
 			if (debugGridTextNeeded && GetDebugGridText(dunCoords, debugGridText)) {
 				Size tileSize = { TILE_WIDTH, TILE_HEIGHT };
-				if (*GetOptions().Graphics.zoom)
+				if (zoomed)
 					tileSize *= 2;
-				DrawString(out, debugGridText, { pixelCoords - Displacement { 0, tileSize.height }, tileSize },
+				DrawString(gridOut, debugGridText, { pixelCoords - Displacement { 0, tileSize.height }, tileSize },
 				    { .flags = UiFlags::ColorRed | UiFlags::AlignCenter | UiFlags::VerticalCenter });
 			}
 			if (DebugGrid) {
 				int halfTileWidth = TILE_WIDTH / 2;
 				int halfTileHeight = TILE_HEIGHT / 2;
-				if (*GetOptions().Graphics.zoom) {
+				if (zoomed) {
 					halfTileWidth *= 2;
 					halfTileHeight *= 2;
 				}
@@ -1413,9 +1423,9 @@ void DrawView(const Surface &out, Point startPosition)
 					const int dy = 1;
 					Point from { originX, center.y };
 					int height = halfTileHeight;
-					if (out.InBounds(from) && out.InBounds(from + Displacement { 2 * dx * height, dy * height })) {
-						uint8_t *dst = out.at(from.x, from.y);
-						const int pitch = out.pitch();
+					if (gridOut.InBounds(from) && gridOut.InBounds(from + Displacement { 2 * dx * height, dy * height })) {
+						uint8_t *dst = gridOut.at(from.x, from.y);
+						const int pitch = gridOut.pitch();
 						while (height-- > 0) {
 							*dst = col;
 							dst += dx;
@@ -1425,9 +1435,9 @@ void DrawView(const Surface &out, Point startPosition)
 						}
 					} else {
 						while (height-- > 0) {
-							out.SetPixel(from, col);
+							gridOut.SetPixel(from, col);
 							from.x += dx;
-							out.SetPixel(from, col);
+							gridOut.SetPixel(from, col);
 							from.x += dx;
 							from.y += dy;
 						}
@@ -1815,6 +1825,7 @@ void ClearScreenBuffer()
 	if (HeadlessMode)
 		return;
 
+	EndLayeredMode();
 	assert(PalSurface != nullptr);
 	SDL_FillSurfaceRect(PalSurface, nullptr, 0);
 }
@@ -1912,6 +1923,11 @@ void DrawAndBlit()
 		return;
 	}
 
+	// A layered frame starts with an empty UI layer, so everything on it is redrawn
+	const bool layered = IsLayeredActive();
+	if (!layered)
+		EndLayeredMode();
+
 	int hgt = 0;
 	bool drawHealth = IsRedrawComponent(PanelDrawComponent::Health);
 	bool drawMana = IsRedrawComponent(PanelDrawComponent::Mana);
@@ -1923,7 +1939,7 @@ void DrawAndBlit()
 
 	const Rectangle &mainPanel = GetMainPanel();
 
-	if (gnScreenWidth > mainPanel.size.width || IsRedrawEverything()) {
+	if (layered || gnScreenWidth > mainPanel.size.width || IsRedrawEverything()) {
 		drawHealth = true;
 		drawMana = true;
 		drawControlButtons = true;
@@ -1941,6 +1957,10 @@ void DrawAndBlit()
 	UndrawCursor(out);
 
 	nthread_UpdateProgressToNextGameTick();
+
+	if (layered)
+		BeginLayeredFrame();
+	LayeredPerfMark(LayeredPerfEvent::FrameStart);
 
 	this_sdl_thread::yield();
 	DrawView(out, ViewPosition);
@@ -1984,7 +2004,9 @@ void DrawAndBlit()
 	lua::GameDrawComplete();
 
 	this_sdl_thread::yield();
-	DrawMain(hgt, drawInfoBox, drawHealth, drawMana, drawBelt, drawControlButtons);
+	// The layered present reads the back buffer directly
+	if (!PresentLayered())
+		DrawMain(hgt, drawInfoBox, drawHealth, drawMana, drawBelt, drawControlButtons);
 
 #ifdef _DEBUG
 	DrawConsole(out);
@@ -1997,7 +2019,9 @@ void DrawAndBlit()
 		}
 	}
 
+	LayeredPerfMark(LayeredPerfEvent::PresentStart);
 	RenderPresent();
+	LayeredPerfMark(LayeredPerfEvent::FrameEnd);
 }
 
 } // namespace devilution

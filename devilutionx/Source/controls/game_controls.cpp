@@ -18,6 +18,7 @@
 #include "controls/plrctrls.h"
 #include "controls/touch/gamepad.h"
 #include "doom.h"
+#include "engine/render/world_view.hpp"
 #include "gamemenu.h"
 #include "gmenu.h"
 #include "options.h"
@@ -311,6 +312,10 @@ void PressControllerButton(ControllerButton button)
 			return;
 		case devilution::ControllerButton_BUTTON_Y:
 #ifdef __3DS__
+			if (IsLayeredActive()) {
+				WorldZoomToggle();
+				return;
+			}
 			GetOptions().Graphics.zoom.SetValue(!*GetOptions().Graphics.zoom);
 			CalcViewportGeometry();
 #endif

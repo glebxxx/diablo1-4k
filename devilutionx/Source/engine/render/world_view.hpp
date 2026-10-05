@@ -12,6 +12,8 @@
  */
 #pragma once
 
+#include <cstdint>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -148,6 +150,36 @@ void WorldZoomOut();
 
 /** @brief Toggles between the current zoom and about twice the current zoom (layered mode only). */
 void WorldZoomToggle();
+
+/**
+ * @brief Turns mouse wheel events into zoom steps.
+ *
+ * Trackpads and touch mice send many small wheel events per gesture (followed by momentum events),
+ * which would otherwise run through the whole zoom ladder at once. A wheel event steps the zoom if the
+ * wheel was idle for `IdleMs` before it, if it reverses the direction, or if the last step is at least
+ * `RepeatMs` old. A notched mouse wheel turned at a normal pace steps once per notch.
+ */
+class WheelZoomLimiter {
+public:
+	static constexpr uint32_t IdleMs = 120;
+	static constexpr uint32_t RepeatMs = 500;
+
+	/**
+	 * @brief Registers a wheel event.
+	 * @param nowMs Time of the event in milliseconds (wrapping 32-bit counter).
+	 * @param direction > 0: zoom in, < 0: zoom out.
+	 * @return Whether the zoom should step.
+	 */
+	bool Accept(uint32_t nowMs, int direction);
+
+private:
+	std::optional<uint32_t> lastEventMs_;
+	std::optional<uint32_t> lastStepMs_;
+	int lastDirection_ = 0;
+};
+
+/** @brief Zooms the world by one ladder step for a Ctrl/Cmd + mouse wheel event, rate limited by `WheelZoomLimiter` (layered mode only). */
+void WorldZoomWheel(int direction);
 
 /** @brief Replaces the current view and `IsLayeredActive()` with `view` (unit tests only). */
 void SetWorldViewForTesting(const WorldView &view);

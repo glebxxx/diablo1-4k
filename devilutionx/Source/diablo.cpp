@@ -46,10 +46,12 @@
 #include "engine/demomode.h"
 #include "engine/dx.h"
 #include "engine/events.hpp"
+#include "engine/layered_present.hpp"
 #include "engine/load_cel.hpp"
 #include "engine/load_file.hpp"
 #include "engine/random.hpp"
 #include "engine/render/clx_render.hpp"
+#include "engine/render/world_view.hpp"
 #include "engine/sound.h"
 #include "game_mode.hpp"
 #include "gamemenu.h"
@@ -178,6 +180,7 @@ bool was_ui_init = false;
 
 void StartGame(interface_mode uMsg)
 {
+	RecalcWorldView();
 	CalcViewportGeometry();
 	cineflag = false;
 	InitCursor();
@@ -586,6 +589,8 @@ void PressKey(SDL_Keycode vkey, uint16_t modState)
 	case SDLK_KP_EQUALS:
 		if (AutomapActive) {
 			AutomapZoomIn();
+		} else if (IsLayeredActive()) {
+			WorldZoomIn();
 		}
 		return;
 	case SDLK_MINUS:
@@ -593,6 +598,8 @@ void PressKey(SDL_Keycode vkey, uint16_t modState)
 	case SDLK_UNDERSCORE:
 		if (AutomapActive) {
 			AutomapZoomOut();
+		} else if (IsLayeredActive()) {
+			WorldZoomOut();
 		}
 		return;
 #ifdef _DEBUG
@@ -735,6 +742,20 @@ void PrepareForFadeIn()
 	}
 }
 
+#if SDL_VERSION_ATLEAST(2, 0, 0)
+/**
+ * @brief Whether the mouse wheel zooms: Ctrl + wheel, and in layered mode also Cmd + wheel
+ * (macOS may take Ctrl + wheel for its accessibility zoom).
+ */
+bool IsZoomWheelModifierHeld()
+{
+	const auto modState = SDL_GetModState();
+	if ((modState & SDL_KMOD_CTRL) != 0)
+		return true;
+	return IsLayeredActive() && (modState & SDL_KMOD_GUI) != 0;
+}
+#endif
+
 void GameEventHandler(const SDL_Event &event, uint16_t modState)
 {
 	[[maybe_unused]] const Options &options = GetOptions();
@@ -810,9 +831,11 @@ void GameEventHandler(const SDL_Event &event, uint16_t modState)
 				ChatLogScrollUp();
 			} else if (IsStashOpen) {
 				Stash.PreviousPage();
-			} else if (SDL_GetModState() & SDL_KMOD_CTRL) {
+			} else if (IsZoomWheelModifierHeld()) {
 				if (AutomapActive) {
 					AutomapZoomIn();
+				} else if (IsLayeredActive()) {
+					WorldZoomWheel(1);
 				}
 			} else {
 				KeymapperPress(MouseScrollUpButton);
@@ -828,9 +851,11 @@ void GameEventHandler(const SDL_Event &event, uint16_t modState)
 				ChatLogScrollDown();
 			} else if (IsStashOpen) {
 				Stash.NextPage();
-			} else if (SDL_GetModState() & SDL_KMOD_CTRL) {
+			} else if (IsZoomWheelModifierHeld()) {
 				if (AutomapActive) {
 					AutomapZoomOut();
+				} else if (IsLayeredActive()) {
+					WorldZoomWheel(-1);
 				}
 			} else {
 				KeymapperPress(MouseScrollDownButton);
@@ -960,6 +985,7 @@ void RunGameLoop(interface_mode uMsg)
 	}
 
 	PaletteFadeOut(8);
+	EndLayeredMode();
 	NewCursor(CURSOR_NONE);
 	ClearScreenBuffer();
 	RedrawEverything();
@@ -2073,6 +2099,10 @@ void InitKeymapActions()
 	    N_("Zoom Game Screen."),
 	    'Z',
 	    [] {
+		    if (IsLayeredActive()) {
+			    WorldZoomToggle();
+			    return;
+		    }
 		    GetOptions().Graphics.zoom.SetValue(!*GetOptions().Graphics.zoom);
 		    CalcViewportGeometry();
 	    },
@@ -2591,6 +2621,10 @@ void InitPadmapActions()
 	    N_("Zoom Game Screen."),
 	    ControllerButton_NONE,
 	    [] {
+		    if (IsLayeredActive()) {
+			    WorldZoomToggle();
+			    return;
+		    }
 		    GetOptions().Graphics.zoom.SetValue(!*GetOptions().Graphics.zoom);
 		    CalcViewportGeometry();
 	    },

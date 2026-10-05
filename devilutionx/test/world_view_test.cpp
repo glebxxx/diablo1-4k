@@ -342,6 +342,37 @@ TEST(WorldViewTest, RuntimeStaysLegacyWhenHeadless)
 	EXPECT_FALSE(GetWorldView().layered);
 }
 
+TEST(WorldViewTest, WheelZoomLimiter)
+{
+	WheelZoomLimiter limiter;
+	// A notched wheel turned slowly: every notch steps.
+	EXPECT_TRUE(limiter.Accept(1000, 1));
+	EXPECT_TRUE(limiter.Accept(1000 + WheelZoomLimiter::IdleMs, 1));
+	EXPECT_TRUE(limiter.Accept(1000 + (3 * WheelZoomLimiter::IdleMs), 1));
+
+	// A trackpad gesture: an event every 16 ms for 1.2 s steps at its start and then every RepeatMs.
+	WheelZoomLimiter trackpad;
+	int steps = 0;
+	for (uint32_t t = 5000; t < 6200; t += 16) {
+		if (trackpad.Accept(t, -1))
+			++steps;
+	}
+	EXPECT_EQ(steps, 3);
+
+	// Reversing the direction steps at once, then the burst is limited again.
+	EXPECT_TRUE(trackpad.Accept(6200, 1));
+	EXPECT_FALSE(trackpad.Accept(6216, 1));
+
+	// After an idle gap the next event steps.
+	EXPECT_TRUE(trackpad.Accept(6216 + WheelZoomLimiter::IdleMs, 1));
+
+	// The millisecond counter may wrap.
+	WheelZoomLimiter wrapping;
+	EXPECT_TRUE(wrapping.Accept(0xFFFFFFF0U, 1));
+	EXPECT_FALSE(wrapping.Accept(0xFFFFFFF0U + 16U, 1));
+	EXPECT_TRUE(wrapping.Accept(0xFFFFFFF0U + 16U + WheelZoomLimiter::IdleMs, 1));
+}
+
 #if !defined(USE_SDL1) && !defined(USE_SDL3)
 TEST(WorldViewTest, Options)
 {
@@ -355,6 +386,8 @@ TEST(WorldViewTest, Options)
 	WorldZoomIn();
 	WorldZoomOut();
 	WorldZoomToggle();
+	WorldZoomWheel(1);
+	WorldZoomWheel(-1);
 	EXPECT_EQ(*graphics.worldZoom, 0);
 
 	// Option changes without a renderer keep the legacy path.

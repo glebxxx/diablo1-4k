@@ -37,6 +37,8 @@ bool LayeredActive = false;
 #ifdef DVL_WORLD_ZOOM_OPTIONS
 /** @brief `World Zoom` option value restored by the next `WorldZoomToggle()`. */
 std::optional<int> ZoomReturn;
+
+WheelZoomLimiter WheelLimiter;
 #endif
 
 /** @brief Converts the centre of pixel `p` of a grid with pixel size `fromScale` and origin `fromOrigin` to the target grid. */
@@ -327,6 +329,30 @@ void WorldZoomToggle()
 	const int ws = ResolveWorldZoom(ladder, optionValue, outputHeight);
 	SetWorldZoom(SnapToZoomLadder(ladder, 2 * ws)); // Clears ZoomReturn
 	ZoomReturn = optionValue;
+#endif
+}
+
+bool WheelZoomLimiter::Accept(uint32_t nowMs, int direction)
+{
+	direction = direction > 0 ? 1 : -1;
+	const bool afterIdle = !lastEventMs_.has_value() || nowMs - *lastEventMs_ >= IdleMs;
+	const bool reversed = direction != lastDirection_;
+	const bool repeat = !lastStepMs_.has_value() || nowMs - *lastStepMs_ >= RepeatMs;
+	lastEventMs_ = nowMs;
+	lastDirection_ = direction;
+	if (!afterIdle && !reversed && !repeat)
+		return false;
+	lastStepMs_ = nowMs;
+	return true;
+}
+
+void WorldZoomWheel([[maybe_unused]] int direction)
+{
+#ifdef DVL_WORLD_ZOOM_OPTIONS
+	if (!IsLayeredActive() || direction == 0)
+		return;
+	if (WheelLimiter.Accept(SDL_GetTicks(), direction))
+		StepWorldZoom(direction > 0 ? 1 : -1);
 #endif
 }
 

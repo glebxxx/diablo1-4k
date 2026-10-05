@@ -25,6 +25,7 @@
 #include "controls/plrctrls.h"
 #include "engine/layered_present.hpp"
 #include "engine/render/primitive_render.hpp"
+#include "engine/render/scrollrt.h"
 #include "engine/render/world_view.hpp"
 #include "headless_mode.hpp"
 #include "init.hpp"
@@ -180,7 +181,9 @@ void CreateBackBuffer()
 	// the global `palette` doesn't have any colors set yet.
 #endif
 
-	RecalcWorldView();
+	// The layered view depends on the back buffer and output sizes
+	if (RecalcWorldView())
+		CalcViewportGeometry();
 }
 
 void BltFast(SDL_Rect *srcRect, SDL_Rect *dstRect)

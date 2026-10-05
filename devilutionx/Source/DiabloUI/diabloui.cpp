@@ -38,6 +38,7 @@
 #include "effects.h"
 #include "engine/clx_sprite.hpp"
 #include "engine/dx.h"
+#include "engine/layered_present.hpp"
 #include "engine/load_pcx.hpp"
 #include "engine/palette.h"
 #include "engine/render/clx_render.hpp"
@@ -422,6 +423,7 @@ void UiOnBackgroundChange()
 	// of single-player characters.
 	//
 	// Black out the screen immediately to make it appear more smooth.
+	EndLayeredMode();
 	SDL_FillSurfaceRect(DiabloUiSurface(), nullptr, 0);
 	if (DiabloUiSurface() == PalSurface)
 		BltFast(nullptr, nullptr);
@@ -797,6 +799,7 @@ void UiAddLogo(std::vector<std::unique_ptr<UiItemBase>> *vecDialog, int y)
 void UiFadeIn()
 {
 	if (HeadlessMode) return;
+	EndLayeredMode();
 	UiUpdateFadePalette();
 	if (DiabloUiSurface() == PalSurface) {
 		BltFast(nullptr, nullptr);

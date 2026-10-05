@@ -62,6 +62,24 @@ struct LayeredFrame {
  */
 void ComposeLayersCpu(const WorldView &view, const LayeredFrame &frame, const uint32_t lut[256], Size output, std::span<uint32_t> out);
 
+/** @brief Points of a layered frame timed by the performance log (environment variable `DEVILUTIONX_PERF_LOG=1`). */
+enum class LayeredPerfEvent : uint8_t {
+	FrameStart,
+	WorldDrawStart,
+	WorldDrawEnd,
+	PresentStart,
+	FrameEnd,
+};
+
+/** @brief Average and 95th percentile of a series of frame times, in milliseconds. */
+struct PerfSummary {
+	double average;
+	double p95;
+};
+
+/** @brief Summarizes frame times. The p95 is the smallest sample that at least 95 % of the samples do not exceed. */
+PerfSummary SummarizeFrameTimes(std::span<const float> milliseconds);
+
 #ifdef DVL_LAYERED_RENDERER
 /** @brief The world surface of the layered renderer (W of the current view). Empty when not allocated. */
 Surface WorldBuffer();
@@ -94,6 +112,14 @@ bool LayeredPresent();
 
 /** @brief `ComposeLayersCpu` of the current layered frame with the current system palette. */
 void ComposeLayersCpu(Size output, std::span<uint32_t> out);
+
+/**
+ * @brief Records a timing point for the performance log. A no-op unless `DEVILUTIONX_PERF_LOG=1` and the frame is layered.
+ *
+ * Every 300 layered frames the average and the p95 of the world draw, UI draw, expand, present and whole
+ * frame times are logged. The present time includes the wait for vsync and the frame limiter.
+ */
+void LayeredPerfMark(LayeredPerfEvent event);
 #else
 inline Surface WorldBuffer()
 {
@@ -117,6 +143,9 @@ inline void FreeLayeredResources()
 inline bool LayeredPresent()
 {
 	return false;
+}
+inline void LayeredPerfMark(LayeredPerfEvent /*event*/)
+{
 }
 #endif
 

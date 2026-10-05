@@ -20,6 +20,7 @@
 #include "engine/backbuffer_state.hpp"
 #include "engine/demomode.h"
 #include "engine/events.hpp"
+#include "engine/layered_present.hpp"
 #include "engine/sound.h"
 #include "headless_mode.hpp"
 #include "hwcursor.hpp"
@@ -44,6 +45,7 @@ void play_movie(const char *pszMovie, bool userCanClose)
 	if (HeadlessMode)
 		return;
 
+	EndLayeredMode();
 	movie_playing = true;
 
 	sound_disable_music(true);
