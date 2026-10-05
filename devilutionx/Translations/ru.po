@@ -657,7 +657,7 @@ msgstr "Выбор сложности"
 #: Source/DiabloUI/multi/selgame.cpp:355
 #, c++-format
 msgid "Join {:s} Games"
-msgstr "Подключиться к {:s}"
+msgstr "Вход в игры {:s}"
 
 #: Source/DiabloUI/multi/selgame.cpp:360
 msgid "Enter Game ID"
@@ -4474,7 +4474,7 @@ msgstr "Количество Зелий Полного Омоложения, к�
 
 #: Source/options.cpp:880
 msgid "Store UI"
-msgstr "Визуальный интерфейс магазина"
+msgstr "Интерфейс магазина"
 
 #: Source/options.cpp:880
 msgid "User interface for stores"

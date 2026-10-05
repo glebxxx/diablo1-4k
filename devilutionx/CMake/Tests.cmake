@@ -236,8 +236,10 @@ if(NOT USE_SDL1)
     GTest::gtest
     app_fatal_for_testing
     language_for_testing
+    libdevilutionx_assets
     libdevilutionx_strings
     libdevilutionx_text_render
+    libdevilutionx_utf8
   )
   target_compile_definitions(ru_text_fit_test PRIVATE
     DEVILUTIONX_RU_PO_PATH="${PROJECT_SOURCE_DIR}/Translations/ru.po"

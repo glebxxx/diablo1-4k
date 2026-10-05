@@ -12,7 +12,7 @@ build/ru_text_fit_test --report=docs/i18n/ru-text-fit.md
 
 `devilutionx/test/fixtures/ru_text_fit/constraints.tsv` lists 481 places where a string is drawn in a box of known width. Rows that do not fit: Russian 0, English 0.
 
-The 40 rows with the least room to spare. For `fit` rows (`KerningFitSpacing`) the width is the width at spacing 0, for `wrap` rows the widest wrapped line.
+The 40 rows with the least room to spare; rows that do not fit come first. For `fit` rows (`KerningFitSpacing`) the width is the width at spacing 0, for `wrap` rows the widest wrapped line.
 
 | Room | Width | Box | Font | Fit | English | Russian | Drawn at |
 |---:|---:|---:|---|---|---|---|---|
@@ -28,7 +28,6 @@ The 40 rows with the least room to spare. For `fit` rows (`KerningFitSpacing`) t
 | 8 | 55 | 63 | 12/1 | fit | `quests` | `задания` | Source/panels/mainpanel.cpp:91 |
 | 10 | 285 | 295 | 30/3 |  | `Select Connection` | `Выбор подключения` | Source/DiabloUI/multi/selconn.cpp:90 |
 | 10 | 176 | 186 | 46/2 |  | `Music` | `Музыка` | Source/gamemenu.cpp:83 |
-| 11 | 629 | 640 | 30/8 |  | `Store UI` | `Визуальный интерфейс магазина` | Source/DiabloUI/settingsmenu.cpp:401 |
 | 12 | 64 | 76 | 12/0 | wrap | `Dexterity` | `Ловкость` | Source/panels/charpanel.cpp:252 |
 | 13 | 31 | 44 | 12/0 |  | `Base` | `База` | Source/panels/charpanel.cpp:252 |
 | 13 | 145 | 158 | 12/1 |  | `Charged Bolt` | `Заряженная Стрела` | Source/panels/spell_book.cpp:168 |
@@ -56,14 +55,14 @@ The 40 rows with the least room to spare. For `fit` rows (`KerningFitSpacing`) t
 | 23 | 40 | 63 | 12/1 | fit | `map` | `карта` | Source/panels/mainpanel.cpp:92 |
 | 23 | 49 | 72 | 12/1 |  | `Misc` | `Разное` | Source/qol/visual_store.cpp:454 |
 | 25 | 28 | 53 | 12/1 | fit | `mute` | `мут` | Source/panels/mainpanel.cpp:128 |
+| 26 | 269 | 295 | 30/3 |  | `Select Action` | `Выберите действие` | Source/DiabloUI/multi/selgame.cpp:150 |
 
 ## Strings more than 25 % wider than English
 
-712 of 2240 translated strings, sorted by excess. Each string is measured at its likely font: the font of its first row in the constraint table, otherwise 46/2 for the game menu, 24/1 for `Source/DiabloUI/` and `Source/options.cpp`, and 12/1 for the rest (font size/spacing). Multi-line strings use their widest line, plural entries their widest form. Long texts such as dialogue are word-wrapped by the engine, so a large excess there only means more lines. Strings are cut at 60 characters; locations come from the `#:` comments in `ru.po`.
+711 of 2240 translated strings, sorted by excess. Each string is measured at its likely font: the font of its first row in the constraint table, otherwise 46/2 for the game menu, 24/1 for `Source/DiabloUI/` and `Source/options.cpp`, and 12/1 for the rest (font size/spacing). Multi-line strings use their widest line, plural entries their widest form. Long texts such as dialogue are word-wrapped by the engine, so a large excess there only means more lines. Strings are cut at 60 characters; locations come from the `#:` comments in `ru.po`.
 
 | Excess | English px | Russian px | Font | English | Russian | Locations |
 |---:|---:|---:|---|---|---|---|
-| +285 % | 163 | 629 | 30/8 | `Store UI` | `Визуальный интерфейс магазина` | Source/options.cpp:880 |
 | +243 % | 23 | 79 | 12/1 | `Tin` | `Оловянный` | Source/translation_dummy.cpp:451 |
 | +235 % | 54 | 181 | 12/1 | `Firebat` (monster) | `Огненная Летучая Мышь` | Source/translation_dummy.cpp:993 |
 | +225 % | 31 | 101 | 12/1 | `Oily` | `Маслянистое` | Source/objects.cpp:152 |
@@ -82,6 +81,7 @@ The 40 rows with the least room to spare. For `fit` rows (`KerningFitSpacing`) t
 | +142 % | 21 | 51 | 12/1 | `Oil` | `Масло` | Source/translation_dummy.cpp:300 |
 | +142 % | 33 | 80 | 12/1 | `peril` | `опасности` | Source/translation_dummy.cpp:1028 |
 | +140 % | 183 | 441 | 30/8 | `Stop hero` | `Остановить персонажа` | Source/diablo.cpp:1946 |
+| +139 % | 163 | 390 | 30/8 | `Store UI` | `Интерфейс магазина` | Source/options.cpp:880 |
 | +139 % | 74 | 177 | 24/1 | `Voices` | `Актёры озвучки` | Source/DiabloUI/credits_lines.cpp:98, Source/DiabloUI/credits_lines.cpp:252 |
 | +136 % | 25 | 59 | 12/1 | `Red` | `Красный` | Source/translation_dummy.cpp:496 |
 | +135 % | 51 | 120 | 12/1 | `Blessed` | `Благославенный` | Source/translation_dummy.cpp:491 |
@@ -515,7 +515,6 @@ The 40 rows with the least room to spare. For `fit` rows (`KerningFitSpacing`) t
 | +40 % | 93 | 131 | 12/1 | `Talk to {:s}` | `Поговорить с {:s}` | Source/stores.cpp:1210 |
 | +40 % | 81 | 114 | 12/1 | `FPS Limiter` | `Ограничить FPS` |  |
 | +40 % | 302 | 425 | 30/8 | `Sort Inventory` | `Сортировка инвентаря` | Source/diablo.cpp:2136, Source/diablo.cpp:2640 |
-| +40 % | 214 | 301 | 30/3 | `Join {:s} Games` | `Подключиться к {:s}` | Source/DiabloUI/multi/selgame.cpp:355 |
 | +40 % | 123 | 173 | 24/1 | `Thanks to` | `Благодарность` | Source/DiabloUI/credits_lines.cpp:262, Source/DiabloUI/credits_lines.cpp:297 |
 | +40 % | 79 | 111 | 12/1 | `Nightscape` | `Ночной Пейзаж` | Source/translation_dummy.cpp:437 |
 | +40 % | 173 | 243 | 46/2 | `Options` | `Настройки` | Source/gamemenu.cpp:52, Source/gamemenu.cpp:64 |

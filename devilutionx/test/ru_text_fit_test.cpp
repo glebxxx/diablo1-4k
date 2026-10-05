@@ -23,14 +23,18 @@
 #include <iostream>
 #include <iterator>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <system_error>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
+#include "engine/assets.hpp"
 #include "engine/render/text_render.hpp"
 #include "utils/str_cat.hpp"
+#include "utils/utf8.hpp"
 
 #ifndef DEVILUTIONX_RU_PO_PATH
 #error "DEVILUTIONX_RU_PO_PATH must be defined"
@@ -191,7 +195,8 @@ std::vector<PoEntry> ParsePo(std::string_view content)
 			continue;
 		}
 		if (line.front() == '#') {
-			if (hasMsgstr) finishEntry();
+			// An obsolete entry ends at the first line that is not "#~", even without a blank line.
+			if (hasMsgstr || (obsolete && !line.starts_with("#~"))) finishEntry();
 			if (line.starts_with("#~")) {
 				obsolete = true;
 			} else if (line.starts_with("#,")) {
@@ -217,7 +222,7 @@ std::vector<PoEntry> ParsePo(std::string_view content)
 		const size_t space = line.find_first_of(" \t");
 		const std::string_view keyword = line.substr(0, space);
 		const std::string_view value = space == std::string_view::npos ? std::string_view {} : line.substr(space);
-		if ((keyword == "msgctxt" || keyword == "msgid") && hasMsgstr) finishEntry();
+		if (obsolete || ((keyword == "msgctxt" || keyword == "msgid") && hasMsgstr)) finishEntry();
 		if (keyword == "msgctxt") {
 			field = &entry.msgctxt;
 		} else if (keyword == "msgid") {
@@ -511,6 +516,31 @@ std::vector<std::string_view> RussianTexts(const PoEntry &entry)
 	return { entry.msgstr.begin(), entry.msgstr.end() };
 }
 
+/**
+ * The font files that GetLineWidth() loads to measure the English and Russian texts of the
+ * constraint table, named as GetFontPath() in text_render.cpp names them: "fonts\<size>-<row>.clx",
+ * where <row> is the code point divided by 256.
+ */
+std::set<std::string> RequiredFontFiles(const Catalog &catalog, const std::vector<Constraint> &constraints)
+{
+	std::set<std::string> files;
+	for (const Constraint &constraint : constraints) {
+		const PoEntry *entry = catalog.Find(constraint.msgctxt, constraint.msgid);
+		if (entry == nullptr) continue;
+		std::vector<std::string_view> texts = EnglishTexts(*entry);
+		const std::vector<std::string_view> russian = RussianTexts(*entry);
+		texts.insert(texts.end(), russian.begin(), russian.end());
+		for (const std::string_view text : texts) {
+			for (const char32_t c : Utf8CodePoints(text)) {
+				if (c == Utf8DecodeError) break;
+				if (c == U'\n' || c == U'\u200B') continue; // GetLineWidth() draws no glyph for these.
+				files.insert(StrCat("fonts\\", constraint.fontSize, "-", AsHexPad2(static_cast<uint16_t>(c >> 8)), ".clx"));
+			}
+		}
+	}
+	return files;
+}
+
 // ---------------------------------------------------------------------------
 // Loading
 // ---------------------------------------------------------------------------
@@ -661,26 +691,34 @@ std::string BuildReport(const Catalog &catalog, const std::vector<Constraint> &c
 		std::string_view text;
 		Measurement m;
 	};
+	// Rows that do not fit sort first: a wrap row can fail on its line count while its widest line has room.
+	const auto tightness = [](const Constraint &constraint, const Measurement &m) {
+		return std::pair { m.fits, constraint.maxWidth - EffectiveWidth(constraint, m) };
+	};
 	std::vector<Row> rows;
 	size_t russianFailures = 0;
 	size_t englishFailures = 0;
 	for (const Constraint &constraint : constraints) {
 		const PoEntry *entry = catalog.Find(constraint.msgctxt, constraint.msgid);
-		if (entry == nullptr || !entry->IsTranslated()) continue;
-		for (const std::string_view text : EnglishTexts(*entry)) {
-			if (!Measure(text, constraint).fits) ++englishFailures;
-		}
+		if (entry == nullptr) continue;
+		// Failures are counted once per row, for English on the same rows as EnglishFits.
+		bool englishFits = true;
+		for (const std::string_view text : EnglishTexts(*entry))
+			englishFits = Measure(text, constraint).fits && englishFits;
+		if (!englishFits) ++englishFailures;
+		if (!entry->IsTranslated()) continue;
 		std::optional<Row> tightest;
 		for (const std::string_view text : RussianTexts(*entry)) {
 			const Measurement m = Measure(text, constraint);
-			if (!m.fits) ++russianFailures;
-			if (!tightest || EffectiveWidth(constraint, m) > EffectiveWidth(constraint, tightest->m))
+			if (!tightest || tightness(constraint, m) < tightness(constraint, tightest->m))
 				tightest = Row { &constraint, text, m };
 		}
-		if (tightest) rows.push_back(*tightest);
+		if (!tightest) continue;
+		if (!tightest->m.fits) ++russianFailures;
+		rows.push_back(*tightest);
 	}
-	std::stable_sort(rows.begin(), rows.end(), [](const Row &a, const Row &b) {
-		return a.constraint->maxWidth - EffectiveWidth(*a.constraint, a.m) < b.constraint->maxWidth - EffectiveWidth(*b.constraint, b.m);
+	std::stable_sort(rows.begin(), rows.end(), [&](const Row &a, const Row &b) {
+		return tightness(*a.constraint, a.m) < tightness(*b.constraint, b.m);
 	});
 
 	StrAppend(out, "## Constraint table\n\n`devilutionx/test/fixtures/ru_text_fit/constraints.tsv` lists ", constraints.size(),
@@ -688,7 +726,7 @@ std::string BuildReport(const Catalog &catalog, const std::vector<Constraint> &c
 	    ", English ", englishFailures, ".\n\n");
 	constexpr size_t TightestShown = 40;
 	StrAppend(out,
-	    "The ", std::min(TightestShown, rows.size()), " rows with the least room to spare. ",
+	    "The ", std::min(TightestShown, rows.size()), " rows with the least room to spare; rows that do not fit come first. ",
 	    "For `fit` rows (`KerningFitSpacing`) the width is the width at spacing 0, ",
 	    "for `wrap` rows the widest wrapped line.\n"
 	    "\n"
@@ -804,9 +842,18 @@ TEST(RuTextFitPoParserTest, ParsesEntries)
 	    "msgstr \"\"\n"
 	    "#: Source/d.cpp:4\n"
 	    "msgid \"Untranslated\"\n"
-	    "msgstr \"\"\n");
+	    "msgstr \"\"\n"
+	    "#~ msgid \"Obsolete without a blank line\"\n"
+	    "#~ msgstr \"Устарело\"\n"
+	    "#: Source/e.cpp:5\n"
+	    "msgid \"After obsolete\"\n"
+	    "msgstr \"После устаревшего\"\n"
+	    "#~ msgid \"Obsolete again\"\n"
+	    "#~ msgstr \"Снова устарело\"\n"
+	    "msgid \"Right after obsolete\"\n"
+	    "msgstr \"Сразу после устаревшего\"\n");
 
-	ASSERT_EQ(entries.size(), 6U);
+	ASSERT_EQ(entries.size(), 8U);
 
 	EXPECT_EQ(entries[0].msgid, "Simple");
 	EXPECT_EQ(entries[0].msgctxt, "");
@@ -837,10 +884,20 @@ TEST(RuTextFitPoParserTest, ParsesEntries)
 	EXPECT_EQ(entries[5].references, (std::vector<std::string> { "Source/d.cpp:4" }));
 	EXPECT_FALSE(entries[5].IsTranslated());
 
+	EXPECT_EQ(entries[6].msgid, "After obsolete");
+	EXPECT_EQ(entries[6].references, (std::vector<std::string> { "Source/e.cpp:5" }));
+	EXPECT_TRUE(entries[6].IsTranslated());
+
+	EXPECT_EQ(entries[7].msgid, "Right after obsolete");
+	EXPECT_TRUE(entries[7].references.empty());
+	EXPECT_TRUE(entries[7].IsTranslated());
+
 	const Catalog catalog(entries);
 	EXPECT_NE(catalog.Find("spell", "Multi line"), nullptr);
 	EXPECT_EQ(catalog.Find("", "Multi line"), nullptr);
 	EXPECT_EQ(catalog.Find("", "Obsolete"), nullptr);
+	EXPECT_EQ(catalog.Find("", "Obsolete without a blank line"), nullptr);
+	EXPECT_EQ(catalog.Find("", "Obsolete again"), nullptr);
 }
 
 TEST(RuTextFitPoParserTest, ParsesConstraintRows)
@@ -911,6 +968,13 @@ protected:
 		const Data &data = LoadData();
 		ASSERT_EQ(data.error, "");
 		ASSERT_TRUE(data.catalog.has_value());
+		// GetLineWidth() measures the glyphs of a missing font file as '?' and only logs an error,
+		// so without these files the tests would compare the wrong widths and still pass.
+		std::string missing;
+		for (const std::string &path : RequiredFontFiles(*data.catalog, data.constraints)) {
+			if (!FindAsset(path).ok()) StrAppend(missing, " ", path);
+		}
+		ASSERT_EQ(missing, "") << "missing font files (built by the ru_text_fit_test_resources target)";
 	}
 
 	static void TearDownTestSuite()

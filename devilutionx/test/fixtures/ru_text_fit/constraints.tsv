@@ -20,7 +20,8 @@
 # Format strings ({}, {:s}, {:d}) are measured with the placeholders drawn literally.
 # Where the argument matters, max_width is already adjusted for it:
 #   max_width = budget - (width(widest argument) - width(placeholder)),
-# both widths measured at the row's font and spacing.
+# both widths measured at the row's font and spacing (at spacing 0 for fit=yes rows,
+# since KerningFitSpacing only needs the width at spacing 0 to fit).
 #
 # Plural entries (msgid_plural) are checked for the msgid, the msgid_plural and every
 # msgstr[n]. Rows are checked for the English msgid too, as a baseline.
