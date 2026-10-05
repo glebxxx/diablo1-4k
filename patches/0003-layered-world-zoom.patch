@@ -1,0 +1,4596 @@
+diff --git a/CMake/Tests.cmake b/CMake/Tests.cmake
+index b6ea2d6..c03fd86 100644
+--- a/CMake/Tests.cmake
++++ b/CMake/Tests.cmake
+@@ -38,6 +38,10 @@ set(tests
+   tile_properties_test
+   timedemo_test
+   townerdat_test
++  ui_layer_test
++  layered_compose_test
++  world_view_test
++  world_picking_test
+   writehero_test
+   vendor_test
+   panel_state_test
+diff --git a/Source/CMakeLists.txt b/Source/CMakeLists.txt
+index cd6c8cd..d0d7883 100644
+--- a/Source/CMakeLists.txt
++++ b/Source/CMakeLists.txt
+@@ -75,12 +75,14 @@ set(libdevilutionx_SRCS
+   engine/backbuffer_state.cpp
+   engine/dx.cpp
+   engine/events.cpp
++  engine/layered_present.cpp
+   engine/palette.cpp
+   engine/sound_position.cpp
+   engine/trn.cpp
+ 
+   engine/render/automap_render.cpp
+   engine/render/scrollrt.cpp
++  engine/render/world_view.cpp
+ 
+   items/validation.cpp
+ 
+@@ -236,6 +238,7 @@ target_link_dependencies(libdevilutionx_clx_render PUBLIC
+   libdevilutionx_light_render
+   libdevilutionx_palette_blending
+   libdevilutionx_strings
++  libdevilutionx_ui_layer
+ )
+ 
+ add_devilutionx_object_library(libdevilutionx_codec
+@@ -272,6 +275,7 @@ target_link_dependencies(libdevilutionx_control
+   libdevilutionx_primitive_render
+   libdevilutionx_quick_messages
+   libdevilutionx_strings
++  libdevilutionx_ui_layer
+ )
+ 
+ add_devilutionx_object_library(libdevilutionx_controller_buttons
+@@ -332,6 +336,7 @@ target_link_dependencies(libdevilutionx_primitive_render
+   PUBLIC
+   libdevilutionx_palette_blending
+   libdevilutionx_surface
++  libdevilutionx_ui_layer
+ )
+ 
+ add_devilutionx_object_library(libdevilutionx_crawl
+@@ -882,6 +887,15 @@ target_link_dependencies(libdevilutionx_txtdata PUBLIC
+   libdevilutionx_sdl2_to_1_2_backports
+ )
+ 
++add_devilutionx_object_library(libdevilutionx_ui_layer
++  engine/render/ui_layer.cpp
++)
++target_link_dependencies(libdevilutionx_ui_layer PUBLIC
++  DevilutionX::SDL
++  libdevilutionx_palette_blending
++  libdevilutionx_surface
++)
++
+ add_devilutionx_object_library(libdevilutionx_utf8
+   utils/utf8.cpp
+ )
+@@ -1117,6 +1131,7 @@ target_link_dependencies(libdevilutionx PUBLIC
+   libdevilutionx_text_render
+   libdevilutionx_txtdata
+   libdevilutionx_ticks
++  libdevilutionx_ui_layer
+   libdevilutionx_utf8
+   libdevilutionx_utils_console
+ )
+diff --git a/Source/DiabloUI/diabloui.cpp b/Source/DiabloUI/diabloui.cpp
+index eca3f18..4e6a6c4 100644
+--- a/Source/DiabloUI/diabloui.cpp
++++ b/Source/DiabloUI/diabloui.cpp
+@@ -38,6 +38,7 @@
+ #include "effects.h"
+ #include "engine/clx_sprite.hpp"
+ #include "engine/dx.h"
++#include "engine/layered_present.hpp"
+ #include "engine/load_pcx.hpp"
+ #include "engine/palette.h"
+ #include "engine/render/clx_render.hpp"
+@@ -422,6 +423,7 @@ void UiOnBackgroundChange()
+ 	// of single-player characters.
+ 	//
+ 	// Black out the screen immediately to make it appear more smooth.
++	EndLayeredMode();
+ 	SDL_FillSurfaceRect(DiabloUiSurface(), nullptr, 0);
+ 	if (DiabloUiSurface() == PalSurface)
+ 		BltFast(nullptr, nullptr);
+@@ -797,6 +799,7 @@ void UiAddLogo(std::vector<std::unique_ptr<UiItemBase>> *vecDialog, int y)
+ void UiFadeIn()
+ {
+ 	if (HeadlessMode) return;
++	EndLayeredMode();
+ 	UiUpdateFadePalette();
+ 	if (DiabloUiSurface() == PalSurface) {
+ 		BltFast(nullptr, nullptr);
+diff --git a/Source/control/control_panel.cpp b/Source/control/control_panel.cpp
+index 1abc001..c8fd173 100644
+--- a/Source/control/control_panel.cpp
++++ b/Source/control/control_panel.cpp
+@@ -8,6 +8,7 @@
+ #include "controls/modifier_hints.h"
+ #include "diablo_msg.hpp"
+ #include "engine/backbuffer_state.hpp"
++#include "engine/layered_present.hpp"
+ #include "engine/load_cel.hpp"
+ #include "engine/render/clx_render.hpp"
+ #include "engine/trn.hpp"
+@@ -773,6 +774,15 @@ void DrawDurIcon(const Surface &out)
+ 
+ void RedBack(const Surface &out)
+ {
++	if (IsKeyedUiLayer(out)) {
++		// Layered frame: tint the whole world and the UI drawn so far.
++		const bool hell = leveltype == DTYPE_HELL;
++		const uint8_t *trn = GetPauseTRN();
++		ApplyTrnToSurface(WorldBuffer(), trn, hell);
++		ApplyTrnToKeyedUiLayer(out, trn, hell);
++		return;
++	}
++
+ 	uint8_t *dst = out.begin();
+ 	uint8_t *tbl = GetPauseTRN();
+ 	for (int h = gnViewportHeight; h != 0; h--, dst += out.pitch() - gnScreenWidth) {
+diff --git a/Source/controls/game_controls.cpp b/Source/controls/game_controls.cpp
+index 042b0c9..22c2159 100644
+--- a/Source/controls/game_controls.cpp
++++ b/Source/controls/game_controls.cpp
+@@ -18,6 +18,7 @@
+ #include "controls/plrctrls.h"
+ #include "controls/touch/gamepad.h"
+ #include "doom.h"
++#include "engine/render/world_view.hpp"
+ #include "gamemenu.h"
+ #include "gmenu.h"
+ #include "options.h"
+@@ -311,6 +312,10 @@ void PressControllerButton(ControllerButton button)
+ 			return;
+ 		case devilution::ControllerButton_BUTTON_Y:
+ #ifdef __3DS__
++			if (IsLayeredActive()) {
++				WorldZoomToggle();
++				return;
++			}
+ 			GetOptions().Graphics.zoom.SetValue(!*GetOptions().Graphics.zoom);
+ 			CalcViewportGeometry();
+ #endif
+diff --git a/Source/cursor.cpp b/Source/cursor.cpp
+index 4e78d28..1f2f8cb 100644
+--- a/Source/cursor.cpp
++++ b/Source/cursor.cpp
+@@ -29,6 +29,7 @@
+ #include "engine/points_in_rectangle_range.hpp"
+ #include "engine/render/clx_render.hpp"
+ #include "engine/render/primitive_render.hpp"
++#include "engine/render/world_view.hpp"
+ #include "engine/trn.hpp"
+ #include "headless_mode.hpp"
+ #include "hwcursor.hpp"
+@@ -261,19 +262,23 @@ bool TrySelectPixelBased(Point tile)
+ 		return false;
+ 	}
+ 
+-	auto checkSprite = [](Point renderingTile, const ClxSprite sprite, Displacement renderingOffset) {
++	// In layered mode sprites are compared in world pixels, without the legacy zoom
++	const bool layered = IsLayeredActive();
++	const Point mousePosition = layered ? UiToWorld(GetWorldView(), MousePosition) : MousePosition;
++
++	auto checkSprite = [layered, mousePosition](Point renderingTile, const ClxSprite sprite, Displacement renderingOffset) {
+ 		const Point renderPosition = GetScreenPosition(renderingTile) + renderingOffset;
+ 		Point spriteTopLeft = renderPosition - Displacement { 0, sprite.height() };
+ 		Size spriteSize = { sprite.width(), sprite.height() };
+-		if (*GetOptions().Graphics.zoom) {
++		if (!layered && *GetOptions().Graphics.zoom) {
+ 			spriteSize *= 2;
+ 			spriteTopLeft *= 2;
+ 		}
+ 		const Rectangle spriteCoords = Rectangle(spriteTopLeft, spriteSize);
+-		if (!spriteCoords.contains(MousePosition))
++		if (!spriteCoords.contains(mousePosition))
+ 			return false;
+-		Point pointInSprite = Point { 0, 0 } + (MousePosition - spriteCoords.position);
+-		if (*GetOptions().Graphics.zoom)
++		Point pointInSprite = Point { 0, 0 } + (mousePosition - spriteCoords.position);
++		if (!layered && *GetOptions().Graphics.zoom)
+ 			pointInSprite /= 2;
+ 		return IsPointWithinClx(pointInSprite, sprite);
+ 	};
+@@ -693,6 +698,18 @@ void AlterMousePositionViaZoom(Point &screenPosition)
+ 	}
+ }
+ 
++Displacement WalkingInputPrediction(const Player &myPlayer)
++{
++	const DisplacementOf<int16_t> offset2 = myPlayer.position.CalculateWalkingOffsetShifted8(myPlayer._pdir, myPlayer.AnimInfo);
++	const DisplacementOf<int16_t> velocity = myPlayer.position.GetWalkingVelocityShifted8(myPlayer._pdir, myPlayer.AnimInfo);
++	int fx = offset2.deltaX / 256;
++	int fy = offset2.deltaY / 256;
++	fx -= (offset2.deltaX + velocity.deltaX) / 256;
++	fy -= (offset2.deltaY + velocity.deltaY) / 256;
++
++	return { fx, fy };
++}
++
+ /**
+  * @brief Adjust by player offset and tile grid alignment
+  */
+@@ -711,15 +728,10 @@ void AlterMousePositionViaPlayer(Point &screenPosition, const Player &myPlayer)
+ 		screenPosition.y -= offset.deltaY;
+ 
+ 		// Predict the next frame when walking to avoid input jitter
+-		const DisplacementOf<int16_t> offset2 = myPlayer.position.CalculateWalkingOffsetShifted8(myPlayer._pdir, myPlayer.AnimInfo);
+-		const DisplacementOf<int16_t> velocity = myPlayer.position.GetWalkingVelocityShifted8(myPlayer._pdir, myPlayer.AnimInfo);
+-		int fx = offset2.deltaX / 256;
+-		int fy = offset2.deltaY / 256;
+-		fx -= (offset2.deltaX + velocity.deltaX) / 256;
+-		fy -= (offset2.deltaY + velocity.deltaY) / 256;
++		const Displacement prediction = WalkingInputPrediction(myPlayer);
+ 
+-		screenPosition.x -= fx;
+-		screenPosition.y -= fy;
++		screenPosition.x -= prediction.deltaX;
++		screenPosition.y -= prediction.deltaY;
+ 	}
+ }
+ 
+@@ -777,6 +789,31 @@ void ShiftToDiamondGridAlignment(Point screenPosition, Point &tile, bool &flipfl
+ 	flipflag = (flipy && flipx) || ((flipy || flipx) && px < TILE_WIDTH / 2);
+ }
+ 
++Point WorldPointToTile(Point worldPosition, bool &flipflag)
++{
++	// Same as GetScreenPosition(): the bounding box of firstTile has its bottom-left corner at offset
++	Point firstTile = ViewPosition;
++	Displacement offset {};
++	CalcFirstTilePosition(firstTile, offset);
++
++	// Cells of TILE_WIDTH x TILE_HEIGHT pixels, laid out so that the diamond of firstTile is centred on the
++	// middle of the left edge of cell (0, 0), as ShiftToDiamondGridAlignment() expects
++	Point screenPosition { worldPosition.x - offset.deltaX - TILE_WIDTH / 2, worldPosition.y - offset.deltaY + TILE_HEIGHT - 1 };
++
++	const Player &myPlayer = *MyPlayer;
++	if (myPlayer.isWalking()) {
++		// Predict the next frame when walking to avoid input jitter
++		screenPosition -= WalkingInputPrediction(myPlayer);
++	}
++
++	// One cell to the right is ShiftGrid(1, 0), one cell down is ShiftGrid(0, 1)
++	Point tile = firstTile;
++	ShiftGrid(&tile, FloorDiv(screenPosition.x, TILE_WIDTH), FloorDiv(screenPosition.y, TILE_HEIGHT));
++	ShiftToDiamondGridAlignment({ PosMod(screenPosition.x, TILE_WIDTH), PosMod(screenPosition.y, TILE_HEIGHT) }, tile, flipflag);
++
++	return tile;
++}
++
+ /**
+  * @brief While holding the button down we should retain target (but potentially lose it if it dies, goes out of view, etc)
+  */
+@@ -907,18 +944,25 @@ void CheckCursMove()
+ 	Point screenPosition = MousePosition;
+ 	const Rectangle &mainPanel = GetMainPanel();
+ 
+-	AlterMousePositionViaPanels(screenPosition);
+-	AlterMousePositionViaScrolling(screenPosition, mainPanel);
+-	AlterMousePositionViaZoom(screenPosition);
+-
+ 	const Player &myPlayer = *MyPlayer;
+ 
+-	AlterMousePositionViaPlayer(screenPosition, myPlayer);
+-
+ 	bool flipflag = false;
+-	Point currentTile = ConvertToTileGrid(screenPosition);
++	Point currentTile;
++	if (IsLayeredActive()) {
++		// The world has its own surface: invert the renderer's tile layout in world pixels
++		AlterMousePositionViaScrolling(screenPosition, mainPanel);
++		currentTile = WorldPointToTile(UiToWorld(GetWorldView(), screenPosition), flipflag);
++	} else {
++		AlterMousePositionViaPanels(screenPosition);
++		AlterMousePositionViaScrolling(screenPosition, mainPanel);
++		AlterMousePositionViaZoom(screenPosition);
++
++		AlterMousePositionViaPlayer(screenPosition, myPlayer);
+ 
+-	ShiftToDiamondGridAlignment(screenPosition, currentTile, flipflag);
++		currentTile = ConvertToTileGrid(screenPosition);
++
++		ShiftToDiamondGridAlignment(screenPosition, currentTile, flipflag);
++	}
+ 
+ 	if (CheckMouseHold(currentTile)) return;
+ 
+diff --git a/Source/cursor.h b/Source/cursor.h
+index 6ccfeed..e476638 100644
+--- a/Source/cursor.h
++++ b/Source/cursor.h
+@@ -44,6 +44,22 @@ void CheckRportal();
+ void CheckTown();
+ void CheckCursMove();
+ 
++/**
++ * @brief Mouse offset that makes picking target the next animation frame while the player is walking.
++ *
++ * Only meaningful while `myPlayer.isWalking()`.
++ */
++Displacement WalkingInputPrediction(const Player &myPlayer);
++
++/**
++ * @brief Returns the dungeon tile under a point of the world surface (layered renderer).
++ *
++ * Exact inverse of the tile layout used by GetScreenPosition() and the renderer, including the walking input prediction.
++ * @param worldPosition Position in world pixels
++ * @param flipflag Set when the point is in the left half of the tile's diamond, as ShiftToDiamondGridAlignment() sets it
++ */
++Point WorldPointToTile(Point worldPosition, bool &flipflag);
++
+ void DrawSoftwareCursor(const Surface &out, Point position, int cursId);
+ 
+ void DrawItem(const Item &item, const Surface &out, Point position, ClxSprite clx);
+diff --git a/Source/diablo.cpp b/Source/diablo.cpp
+index 9a5c7f4..aafe5ee 100644
+--- a/Source/diablo.cpp
++++ b/Source/diablo.cpp
+@@ -46,10 +46,12 @@
+ #include "engine/demomode.h"
+ #include "engine/dx.h"
+ #include "engine/events.hpp"
++#include "engine/layered_present.hpp"
+ #include "engine/load_cel.hpp"
+ #include "engine/load_file.hpp"
+ #include "engine/random.hpp"
+ #include "engine/render/clx_render.hpp"
++#include "engine/render/world_view.hpp"
+ #include "engine/sound.h"
+ #include "game_mode.hpp"
+ #include "gamemenu.h"
+@@ -178,6 +180,7 @@ bool was_ui_init = false;
+ 
+ void StartGame(interface_mode uMsg)
+ {
++	RecalcWorldView();
+ 	CalcViewportGeometry();
+ 	cineflag = false;
+ 	InitCursor();
+@@ -586,6 +589,8 @@ void PressKey(SDL_Keycode vkey, uint16_t modState)
+ 	case SDLK_KP_EQUALS:
+ 		if (AutomapActive) {
+ 			AutomapZoomIn();
++		} else if (IsLayeredActive()) {
++			WorldZoomIn();
+ 		}
+ 		return;
+ 	case SDLK_MINUS:
+@@ -593,6 +598,8 @@ void PressKey(SDL_Keycode vkey, uint16_t modState)
+ 	case SDLK_UNDERSCORE:
+ 		if (AutomapActive) {
+ 			AutomapZoomOut();
++		} else if (IsLayeredActive()) {
++			WorldZoomOut();
+ 		}
+ 		return;
+ #ifdef _DEBUG
+@@ -735,6 +742,20 @@ void PrepareForFadeIn()
+ 	}
+ }
+ 
++#if SDL_VERSION_ATLEAST(2, 0, 0)
++/**
++ * @brief Whether the mouse wheel zooms: Ctrl + wheel, and in layered mode also Cmd + wheel
++ * (macOS may take Ctrl + wheel for its accessibility zoom).
++ */
++bool IsZoomWheelModifierHeld()
++{
++	const auto modState = SDL_GetModState();
++	if ((modState & SDL_KMOD_CTRL) != 0)
++		return true;
++	return IsLayeredActive() && (modState & SDL_KMOD_GUI) != 0;
++}
++#endif
++
+ void GameEventHandler(const SDL_Event &event, uint16_t modState)
+ {
+ 	[[maybe_unused]] const Options &options = GetOptions();
+@@ -810,9 +831,11 @@ void GameEventHandler(const SDL_Event &event, uint16_t modState)
+ 				ChatLogScrollUp();
+ 			} else if (IsStashOpen) {
+ 				Stash.PreviousPage();
+-			} else if (SDL_GetModState() & SDL_KMOD_CTRL) {
++			} else if (IsZoomWheelModifierHeld()) {
+ 				if (AutomapActive) {
+ 					AutomapZoomIn();
++				} else if (IsLayeredActive()) {
++					WorldZoomWheel(1);
+ 				}
+ 			} else {
+ 				KeymapperPress(MouseScrollUpButton);
+@@ -828,9 +851,11 @@ void GameEventHandler(const SDL_Event &event, uint16_t modState)
+ 				ChatLogScrollDown();
+ 			} else if (IsStashOpen) {
+ 				Stash.NextPage();
+-			} else if (SDL_GetModState() & SDL_KMOD_CTRL) {
++			} else if (IsZoomWheelModifierHeld()) {
+ 				if (AutomapActive) {
+ 					AutomapZoomOut();
++				} else if (IsLayeredActive()) {
++					WorldZoomWheel(-1);
+ 				}
+ 			} else {
+ 				KeymapperPress(MouseScrollDownButton);
+@@ -960,6 +985,7 @@ void RunGameLoop(interface_mode uMsg)
+ 	}
+ 
+ 	PaletteFadeOut(8);
++	EndLayeredMode();
+ 	NewCursor(CURSOR_NONE);
+ 	ClearScreenBuffer();
+ 	RedrawEverything();
+@@ -2073,6 +2099,10 @@ void InitKeymapActions()
+ 	    N_("Zoom Game Screen."),
+ 	    'Z',
+ 	    [] {
++		    if (IsLayeredActive()) {
++			    WorldZoomToggle();
++			    return;
++		    }
+ 		    GetOptions().Graphics.zoom.SetValue(!*GetOptions().Graphics.zoom);
+ 		    CalcViewportGeometry();
+ 	    },
+@@ -2591,6 +2621,10 @@ void InitPadmapActions()
+ 	    N_("Zoom Game Screen."),
+ 	    ControllerButton_NONE,
+ 	    [] {
++		    if (IsLayeredActive()) {
++			    WorldZoomToggle();
++			    return;
++		    }
+ 		    GetOptions().Graphics.zoom.SetValue(!*GetOptions().Graphics.zoom);
+ 		    CalcViewportGeometry();
+ 	    },
+diff --git a/Source/engine/demomode.cpp b/Source/engine/demomode.cpp
+index 0043f27..38e1114 100644
+--- a/Source/engine/demomode.cpp
++++ b/Source/engine/demomode.cpp
+@@ -635,6 +635,10 @@ void OverrideOptions()
+ #endif
+ #if SDL_VERSION_ATLEAST(2, 0, 0)
+ 	GetOptions().Graphics.hardwareCursor.SetValue(false);
++#endif
++#if !defined(USE_SDL1) && !defined(USE_SDL3)
++	// Demos record the screen size and mouse positions of the single-layer renderer.
++	GetOptions().Graphics.independentZoom.SetValue(false);
+ #endif
+ 	if (Timedemo) {
+ 		GetOptions().Graphics.frameRateControl.SetValue(FrameRateControl::None);
+diff --git a/Source/engine/dx.cpp b/Source/engine/dx.cpp
+index 54b2d00..8daf3d0 100644
+--- a/Source/engine/dx.cpp
++++ b/Source/engine/dx.cpp
+@@ -23,7 +23,10 @@
+ 
+ #include "controls/control_mode.hpp"
+ #include "controls/plrctrls.h"
++#include "engine/layered_present.hpp"
+ #include "engine/render/primitive_render.hpp"
++#include "engine/render/scrollrt.h"
++#include "engine/render/world_view.hpp"
+ #include "headless_mode.hpp"
+ #include "init.hpp"
+ #include "options.h"
+@@ -136,6 +139,7 @@ void dx_cleanup()
+ 		SDL_HideWindow(ghMainWnd);
+ #endif
+ 
++	FreeLayeredResources();
+ 	PalSurface = nullptr;
+ 	PinnedPalSurface = nullptr;
+ 	Palette = nullptr;
+@@ -176,10 +180,17 @@ void CreateBackBuffer()
+ 	// time the global `palette` is changed. No need to do anything here as
+ 	// the global `palette` doesn't have any colors set yet.
+ #endif
++
++	// The layered view depends on the back buffer and output sizes
++	if (RecalcWorldView())
++		CalcViewportGeometry();
+ }
+ 
+ void BltFast(SDL_Rect *srcRect, SDL_Rect *dstRect)
+ {
++	// The layered present reads the back buffer directly.
++	if (PresentLayered())
++		return;
+ 	if (RenderDirectlyToOutputSurface) {
+ #ifndef USE_SDL1
+ 		// A null rect means the caller changed the entire surface.
+@@ -309,10 +320,12 @@ void RenderPresent()
+ 		if (!SDL_UpdateTexture(texture.get(), nullptr, surface->pixels, surface->pitch)) ErrSdl();
+ 		if (!SDL_RenderTexture(renderer, texture.get(), nullptr, nullptr)) ErrSdl();
+ #else
+-		if (SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255) <= -1) ErrSdl();
+-		if (SDL_RenderClear(renderer) <= -1) ErrSdl();
+-		if (SDL_UpdateTexture(texture.get(), nullptr, surface->pixels, surface->pitch) <= -1) ErrSdl();
+-		if (SDL_RenderCopy(renderer, texture.get(), nullptr, nullptr) <= -1) ErrSdl();
++		if (!PresentLayered() || !LayeredPresent()) {
++			if (SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255) <= -1) ErrSdl();
++			if (SDL_RenderClear(renderer) <= -1) ErrSdl();
++			if (SDL_UpdateTexture(texture.get(), nullptr, surface->pixels, surface->pitch) <= -1) ErrSdl();
++			if (SDL_RenderCopy(renderer, texture.get(), nullptr, nullptr) <= -1) ErrSdl();
++		}
+ #endif
+ 
+ 		if (ControlMode == ControlTypes::VirtualGamepad) {
+diff --git a/Source/engine/layered_present.cpp b/Source/engine/layered_present.cpp
+new file mode 100644
+index 0000000..724d29e
+--- /dev/null
++++ b/Source/engine/layered_present.cpp
+@@ -0,0 +1,496 @@
++/**
++ * @file layered_present.cpp
++ *
++ * Implementation of the layered renderer's buffers and present.
++ */
++#include "engine/layered_present.hpp"
++
++#include <algorithm>
++#include <array>
++#include <chrono>
++#include <cstddef>
++#include <cstdint>
++#include <cstdlib>
++#include <cstring>
++#include <format>
++#include <initializer_list>
++#include <string>
++#include <string_view>
++#include <vector>
++
++#include "engine/backbuffer_state.hpp"
++#include "engine/dx.h"
++#include "engine/palette.h"
++#include "engine/render/scrollrt.h"
++#include "utils/display.h"
++#include "utils/log.hpp"
++#include "utils/sdl_ptrs.h"
++#include "utils/sdl_wrap.h"
++
++namespace devilution {
++
++namespace {
++
++constexpr uint32_t OpaqueAlpha = 0xFF000000;
++constexpr uint32_t HalfAlpha = 0x80000000;
++constexpr uint32_t RgbMask = 0x00FFFFFF;
++
++uint32_t *Row(uint32_t *base, int pitchBytes, int y)
++{
++	return reinterpret_cast<uint32_t *>(reinterpret_cast<uint8_t *>(base) + static_cast<std::ptrdiff_t>(y) * pitchBytes);
++}
++
++/** @brief `src` over `dst` with alpha `alpha` (8-bit), per channel, rounded to nearest. */
++uint32_t BlendOver(uint32_t src, uint32_t dst, uint32_t alpha)
++{
++	uint32_t result = OpaqueAlpha;
++	for (const int shift : { 0, 8, 16 }) {
++		const uint32_t s = (src >> shift) & 0xFF;
++		const uint32_t d = (dst >> shift) & 0xFF;
++		result |= (((s * alpha) + (d * (255 - alpha)) + 127) / 255) << shift;
++	}
++	return result;
++}
++
++/** @brief Source pixel of a layer for each output pixel along one axis, -1 outside of the layer. */
++std::vector<int> WorldSamples(int outputLength, int origin, int ws, int worldLength)
++{
++	std::vector<int> samples(outputLength);
++	for (int i = 0; i < outputLength; ++i) {
++		const int q = FloorDiv(i - origin, ws);
++		samples[i] = q >= 0 && q < worldLength ? q : -1;
++	}
++	return samples;
++}
++
++std::vector<int> UiSamples(int outputLength, int origin, int viewportLength, int uiLength)
++{
++	std::vector<int> samples(outputLength, -1);
++	if (viewportLength <= 0)
++		return samples;
++	for (int i = 0; i < outputLength; ++i) {
++		const int offset = i - origin;
++		if (offset < 0 || offset >= viewportLength)
++			continue;
++		// Nearest sampling at the pixel centre: floor((offset + 0.5) * uiLength / viewportLength).
++		const auto u = static_cast<int>(((2 * static_cast<int64_t>(offset) + 1) * uiLength) / (2 * static_cast<int64_t>(viewportLength)));
++		samples[i] = std::clamp(u, 0, uiLength - 1);
++	}
++	return samples;
++}
++
++#ifdef DVL_LAYERED_RENDERER
++/** @brief The world layer (W of the current view), 8-bit with the global palette. */
++SDLSurfaceUniquePtr WorldSurface;
++/** @brief Colours of the `UiKeyHalf` pixels of the UI layer, same pitch and height as `PalSurface`. */
++std::vector<uint8_t> UiHalfPlane;
++
++SDLTextureUniquePtr WorldTexture;
++Size WorldTextureSize;
++SDLTextureUniquePtr UiTexture;
++Size UiTextureSize;
++
++size_t UiLayerByteSize()
++{
++	return static_cast<size_t>(PalSurface->pitch) * static_cast<size_t>(PalSurface->h);
++}
++
++void FreeLayeredBuffers()
++{
++	EndLayeredMode();
++	SetUiLayerTarget(nullptr, nullptr);
++	WorldSurface = nullptr;
++	UiHalfPlane = {};
++}
++
++bool LayeredBuffersMatch(const WorldView &view)
++{
++	return WorldSurface != nullptr && PalSurface != nullptr
++	    && WorldSurface->w == view.size.width && WorldSurface->h == view.size.height
++	    && PalSurface->w == view.uiSize.width && PalSurface->h == view.uiSize.height
++	    && PalSurface->pixels == UiLayer.uiPixels && UiHalfPlane.size() == UiLayerByteSize();
++}
++
++void EnsureTexture(SDLTextureUniquePtr &texture, Size &textureSize, Size size, SDL_BlendMode blendMode)
++{
++	if (texture != nullptr && textureSize == size)
++		return;
++	texture = nullptr;
++	texture = SDLWrap::CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, size.width, size.height);
++	// Integer factors: nearest sampling keeps the pixels crisp, linear sampling would fringe the keyed edges.
++	if (SDL_SetTextureScaleMode(texture.get(), SDL_ScaleModeNearest) < 0) {
++		LogError("SDL_SetTextureScaleMode: {}", SDL_GetError());
++		SDL_ClearError();
++	}
++	if (SDL_SetTextureBlendMode(texture.get(), blendMode) < 0)
++		ErrSdl();
++	textureSize = size;
++}
++
++template <typename ExpandFn>
++void UpdateStreamingTexture(SDL_Texture *texture, ExpandFn &&expand)
++{
++	void *pixels;
++	int pitch;
++	if (SDL_LockTexture(texture, nullptr, &pixels, &pitch) < 0)
++		ErrSdl();
++	expand(static_cast<uint32_t *>(pixels), pitch);
++	SDL_UnlockTexture(texture);
++}
++
++using PerfClock = std::chrono::steady_clock;
++
++/** @brief Layered frames per performance log entry. */
++constexpr size_t PerfLogFrames = 300;
++
++enum PerfStage : uint8_t {
++	PerfWorldDraw,
++	PerfUiDraw,
++	PerfExpand,
++	PerfPresent,
++	PerfFrame,
++	NumPerfStages,
++};
++
++constexpr std::string_view PerfStageNames[] = { "world", "ui", "expand", "present", "frame" };
++
++struct PerfLogState {
++	bool enabled;
++	/** @brief Whether a layered frame is being timed (between `FrameStart` and `FrameEnd`). */
++	bool inFrame;
++	PerfClock::time_point frameStart;
++	PerfClock::time_point worldStart;
++	PerfClock::time_point presentStart;
++	double worldMs;
++	double expandMs;
++	std::array<std::vector<float>, NumPerfStages> samples;
++};
++
++bool IsPerfLogRequested()
++{
++	const char *value = std::getenv("DEVILUTIONX_PERF_LOG");
++	return value != nullptr && std::string_view(value) == "1";
++}
++
++PerfLogState PerfLog { IsPerfLogRequested(), false, {}, {}, {}, 0, 0, {} };
++
++double MillisecondsBetween(PerfClock::time_point start, PerfClock::time_point end)
++{
++	return std::chrono::duration<double, std::milli>(end - start).count();
++}
++
++void LogPerfSamples()
++{
++	const WorldView &view = GetWorldView();
++	std::string message = std::format("Layered perf, {} frames, O {}x{}, U {}x{}, ws {}, W {}x{}, avg/p95 ms:",
++	    PerfLog.samples[PerfFrame].size(), view.outputSize.width, view.outputSize.height,
++	    view.uiSize.width, view.uiSize.height, view.ws, view.size.width, view.size.height);
++	for (size_t stage = 0; stage < NumPerfStages; ++stage) {
++		const PerfSummary summary = SummarizeFrameTimes(PerfLog.samples[stage]);
++		message += std::format(" {} {:.2f}/{:.2f}", PerfStageNames[stage], summary.average, summary.p95);
++		PerfLog.samples[stage].clear();
++	}
++	Log("{}", message);
++}
++#endif
++
++} // namespace
++
++void BuildPaletteLut32(const SDL_Color *palette, uint32_t lut[256])
++{
++	for (unsigned i = 0; i < 256; ++i) {
++		lut[i] = (static_cast<uint32_t>(palette[i].r) << 16) | (static_cast<uint32_t>(palette[i].g) << 8) | static_cast<uint32_t>(palette[i].b);
++	}
++}
++
++void ExpandIndexed(const uint8_t *src, int srcPitch, uint32_t *dst, int dstPitch, int width, int height, const uint32_t lut[256])
++{
++	for (int y = 0; y < height; ++y) {
++		const uint8_t *srcRow = src + static_cast<std::ptrdiff_t>(y) * srcPitch;
++		uint32_t *dstRow = Row(dst, dstPitch, y);
++		for (int x = 0; x < width; ++x) {
++			dstRow[x] = lut[srcRow[x]] | OpaqueAlpha;
++		}
++	}
++}
++
++void ExpandUiKeyed(const uint8_t *src, const uint8_t *half, int srcPitch, uint32_t *dst, int dstPitch, int width, int height, const uint32_t lut[256])
++{
++	for (int y = 0; y < height; ++y) {
++		const uint8_t *srcRow = src + static_cast<std::ptrdiff_t>(y) * srcPitch;
++		const uint8_t *halfRow = half + static_cast<std::ptrdiff_t>(y) * srcPitch;
++		uint32_t *dstRow = Row(dst, dstPitch, y);
++		for (int x = 0; x < width; ++x) {
++			const uint8_t color = srcRow[x];
++			if (color == UiKeyTransparent) {
++				dstRow[x] = 0;
++			} else if (color == UiKeyHalf) {
++				dstRow[x] = (lut[halfRow[x]] & RgbMask) | HalfAlpha;
++			} else {
++				dstRow[x] = lut[color] | OpaqueAlpha;
++			}
++		}
++	}
++}
++
++PerfSummary SummarizeFrameTimes(std::span<const float> milliseconds)
++{
++	if (milliseconds.empty())
++		return { 0, 0 };
++	std::vector<float> sorted(milliseconds.begin(), milliseconds.end());
++	std::sort(sorted.begin(), sorted.end());
++	double sum = 0;
++	for (const float ms : sorted)
++		sum += ms;
++	// Nearest rank: ceil(0.95 * n), at least 1
++	const size_t rank = (sorted.size() * 95 + 99) / 100;
++	return { sum / static_cast<double>(sorted.size()), sorted[rank - 1] };
++}
++
++void ComposeLayersCpu(const WorldView &view, const LayeredFrame &frame, const uint32_t lut[256], Size output, std::span<uint32_t> out)
++{
++	const std::vector<int> worldX = WorldSamples(output.width, view.originPx.x, view.ws, view.size.width);
++	const std::vector<int> worldY = WorldSamples(output.height, view.originPx.y, view.ws, view.size.height);
++	const std::vector<int> uiX = UiSamples(output.width, view.uiOriginPx.x, view.uiViewportSize.width, view.uiSize.width);
++	const std::vector<int> uiY = UiSamples(output.height, view.uiOriginPx.y, view.uiViewportSize.height, view.uiSize.height);
++
++	for (int y = 0; y < output.height; ++y) {
++		uint32_t *outRow = out.data() + static_cast<std::ptrdiff_t>(y) * output.width;
++		const uint8_t *worldRow = worldY[y] >= 0 ? frame.world + static_cast<std::ptrdiff_t>(worldY[y]) * frame.worldPitch : nullptr;
++		const std::ptrdiff_t uiOffset = uiY[y] >= 0 ? static_cast<std::ptrdiff_t>(uiY[y]) * frame.uiPitch : -1;
++		for (int x = 0; x < output.width; ++x) {
++			uint32_t color = OpaqueAlpha;
++			if (worldRow != nullptr && worldX[x] >= 0)
++				color = lut[worldRow[worldX[x]]] | OpaqueAlpha;
++			if (uiOffset >= 0 && uiX[x] >= 0) {
++				const std::ptrdiff_t i = uiOffset + uiX[x];
++				const uint8_t uiColor = frame.ui[i];
++				if (uiColor == UiKeyHalf) {
++					color = BlendOver(lut[frame.half[i]], color, HalfAlpha >> 24);
++				} else if (uiColor != UiKeyTransparent) {
++					color = lut[uiColor] | OpaqueAlpha;
++				}
++			}
++			outRow[x] = color;
++		}
++	}
++}
++
++#ifdef DVL_LAYERED_RENDERER
++Surface WorldBuffer()
++{
++	if (WorldSurface == nullptr)
++		return {};
++	return Surface(WorldSurface.get());
++}
++
++void BeginLayeredFrame()
++{
++	// The output size and the integer scaling can change without a hook (e.g. Alt+Enter or the
++	// "Integer Scaling" option), so the view is checked every frame. Without a renderer (unit tests)
++	// the view is whatever was set.
++	if (renderer != nullptr && RecalcWorldView()) {
++		CalcViewportGeometry();
++		RedrawEverything();
++	}
++	if (!IsLayeredActive()) {
++		EndLayeredMode();
++		return;
++	}
++	UpdateLayeredBuffers();
++	if (!LayeredBuffersMatch(GetWorldView())) {
++		EndLayeredMode();
++		return;
++	}
++	std::memset(PalSurface->pixels, UiKeyTransparent, UiLayerByteSize());
++	SetPresentLayered(true);
++}
++
++void EndLayeredMode()
++{
++	if (!PresentLayered())
++		return;
++	SetPresentLayered(false);
++
++	// The upstream present shows the renderer texture surface, which still holds whatever was blitted
++	// before the layered mode began. Clear it so that it is not flashed.
++	if (renderer != nullptr) {
++		SDL_Surface *output = GetOutputSurface();
++		if (output != nullptr)
++			SDL_FillRect(output, nullptr, SDL_MapRGB(output->format, 0, 0, 0));
++	}
++	// The back buffer holds the keyed UI layer, not a complete frame.
++	RedrawEverything();
++}
++
++void RebuildUiKeyRemap()
++{
++	// `paletteTransparencyLookup` is generated from `logical_palette`, so the replacements are too.
++	UpdateUiKeyRemap(logical_palette.data());
++}
++
++void UpdateLayeredBuffers()
++{
++	if (!IsLayeredActive() || PalSurface == nullptr) {
++		FreeLayeredBuffers();
++		return;
++	}
++
++	const Size worldSize = GetWorldView().size;
++	if (WorldSurface == nullptr || WorldSurface->w != worldSize.width || WorldSurface->h != worldSize.height) {
++		WorldSurface = SDLWrap::CreateRGBSurfaceWithFormat(0, worldSize.width, worldSize.height, 8, SDL_PIXELFORMAT_INDEX8);
++		if (Palette != nullptr && SDL_SetSurfacePalette(WorldSurface.get(), Palette.get()) < 0)
++			ErrSdl();
++	}
++
++	const size_t halfPlaneSize = UiLayerByteSize();
++	if (PresentLayered() && (PalSurface->pixels != UiLayer.uiPixels || UiHalfPlane.size() != halfPlaneSize)) {
++		// The back buffer was recreated: it no longer holds the layered frame.
++		EndLayeredMode();
++	}
++	if (UiHalfPlane.size() != halfPlaneSize)
++		UiHalfPlane.assign(halfPlaneSize, 0);
++	SetUiLayerTarget(PalSurface->pixels, UiHalfPlane.data());
++}
++
++void FreeLayeredResources()
++{
++	SetPresentLayered(false);
++	SetUiLayerTarget(nullptr, nullptr);
++	WorldTexture = nullptr;
++	WorldTextureSize = {};
++	UiTexture = nullptr;
++	UiTextureSize = {};
++	WorldSurface = nullptr;
++	UiHalfPlane = {};
++}
++
++bool LayeredPresent()
++{
++	const WorldView &view = GetWorldView();
++	if (renderer == nullptr || !IsLayeredActive() || !LayeredBuffersMatch(view)) {
++		EndLayeredMode();
++		return false;
++	}
++
++	EnsureTexture(WorldTexture, WorldTextureSize, view.size, SDL_BLENDMODE_NONE);
++	EnsureTexture(UiTexture, UiTextureSize, view.uiSize, SDL_BLENDMODE_BLEND);
++
++	const PerfClock::time_point expandStart = PerfLog.inFrame ? PerfClock::now() : PerfClock::time_point {};
++	// Rebuilt every present: fades, brightness and colour cycling only change `system_palette`.
++	uint32_t lut[256];
++	BuildPaletteLut32(system_palette.data(), lut);
++	UpdateStreamingTexture(WorldTexture.get(), [&](uint32_t *pixels, int pitch) {
++		ExpandIndexed(static_cast<const uint8_t *>(WorldSurface->pixels), WorldSurface->pitch, pixels, pitch, view.size.width, view.size.height, lut);
++	});
++	UpdateStreamingTexture(UiTexture.get(), [&](uint32_t *pixels, int pitch) {
++		ExpandUiKeyed(static_cast<const uint8_t *>(PalSurface->pixels), UiHalfPlane.data(), PalSurface->pitch, pixels, pitch, view.uiSize.width, view.uiSize.height, lut);
++	});
++	if (PerfLog.inFrame)
++		PerfLog.expandMs += MillisecondsBetween(expandStart, PerfClock::now());
++
++	if (SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255) <= -1)
++		ErrSdl();
++	if (SDL_RenderClear(renderer) <= -1)
++		ErrSdl();
++
++	int logicalWidth;
++	int logicalHeight;
++	SDL_RenderGetLogicalSize(renderer, &logicalWidth, &logicalHeight);
++	const bool logicalSizeIsUi = logicalWidth == view.uiSize.width && logicalHeight == view.uiSize.height;
++	const bool uiViewportIsOutput = view.uiOriginPx == Point { 0, 0 } && view.uiViewportSize == view.outputSize;
++	if (logicalSizeIsUi && uiViewportIsOutput) {
++		// Draw the world in logical (UI) units: the renderer multiplies by the UI scale and adds the
++		// UI viewport origin, which gives exactly the physical rectangle of the world.
++		const float scale = view.uiScale;
++		const SDL_FRect worldRect {
++			static_cast<float>(view.originPx.x - view.uiOriginPx.x) / scale,
++			static_cast<float>(view.originPx.y - view.uiOriginPx.y) / scale,
++			static_cast<float>(view.size.width * view.ws) / scale,
++			static_cast<float>(view.size.height * view.ws) / scale,
++		};
++		if (SDL_RenderCopyF(renderer, WorldTexture.get(), nullptr, &worldRect) <= -1)
++			ErrSdl();
++		if (SDL_RenderCopy(renderer, UiTexture.get(), nullptr, nullptr) <= -1)
++			ErrSdl();
++		return true;
++	}
++
++	// The renderer clips to the UI viewport, which does not cover the whole output here (letterbox or
++	// pillarbox bars), so draw both layers at their physical rectangles without a logical size.
++	if (logicalWidth != 0 && SDL_RenderSetLogicalSize(renderer, 0, 0) <= -1)
++		ErrSdl();
++	const SDL_Rect worldRect { view.originPx.x, view.originPx.y, view.size.width * view.ws, view.size.height * view.ws };
++	const SDL_Rect uiRect { view.uiOriginPx.x, view.uiOriginPx.y, view.uiViewportSize.width, view.uiViewportSize.height };
++	if (SDL_RenderCopy(renderer, WorldTexture.get(), nullptr, &worldRect) <= -1)
++		ErrSdl();
++	if (SDL_RenderCopy(renderer, UiTexture.get(), nullptr, &uiRect) <= -1)
++		ErrSdl();
++	if (logicalWidth != 0 && SDL_RenderSetLogicalSize(renderer, logicalWidth, logicalHeight) <= -1)
++		ErrSdl();
++	return true;
++}
++
++void ComposeLayersCpu(Size output, std::span<uint32_t> out)
++{
++	const WorldView &view = GetWorldView();
++	if (!IsLayeredActive() || !LayeredBuffersMatch(view)) {
++		std::fill(out.begin(), out.end(), OpaqueAlpha);
++		return;
++	}
++	uint32_t lut[256];
++	BuildPaletteLut32(system_palette.data(), lut);
++	const LayeredFrame frame {
++		static_cast<const uint8_t *>(WorldSurface->pixels),
++		WorldSurface->pitch,
++		static_cast<const uint8_t *>(PalSurface->pixels),
++		UiHalfPlane.data(),
++		PalSurface->pitch,
++	};
++	ComposeLayersCpu(view, frame, lut, output, out);
++}
++
++void LayeredPerfMark(LayeredPerfEvent event)
++{
++	if (!PerfLog.enabled)
++		return;
++	const PerfClock::time_point now = PerfClock::now();
++	if (event == LayeredPerfEvent::FrameStart) {
++		PerfLog.inFrame = PresentLayered();
++		PerfLog.frameStart = now;
++		PerfLog.worldMs = 0;
++		PerfLog.expandMs = 0;
++		return;
++	}
++	if (!PerfLog.inFrame)
++		return;
++	switch (event) {
++	case LayeredPerfEvent::FrameStart:
++		break;
++	case LayeredPerfEvent::WorldDrawStart:
++		PerfLog.worldStart = now;
++		break;
++	case LayeredPerfEvent::WorldDrawEnd:
++		PerfLog.worldMs += MillisecondsBetween(PerfLog.worldStart, now);
++		break;
++	case LayeredPerfEvent::PresentStart:
++		PerfLog.presentStart = now;
++		break;
++	case LayeredPerfEvent::FrameEnd: {
++		PerfLog.inFrame = false;
++		const double drawMs = MillisecondsBetween(PerfLog.frameStart, PerfLog.presentStart);
++		const double presentMs = MillisecondsBetween(PerfLog.presentStart, now);
++		PerfLog.samples[PerfWorldDraw].push_back(static_cast<float>(PerfLog.worldMs));
++		PerfLog.samples[PerfUiDraw].push_back(static_cast<float>(std::max(0.0, drawMs - PerfLog.worldMs)));
++		PerfLog.samples[PerfExpand].push_back(static_cast<float>(PerfLog.expandMs));
++		PerfLog.samples[PerfPresent].push_back(static_cast<float>(std::max(0.0, presentMs - PerfLog.expandMs)));
++		PerfLog.samples[PerfFrame].push_back(static_cast<float>(MillisecondsBetween(PerfLog.frameStart, now)));
++		if (PerfLog.samples[PerfFrame].size() >= PerfLogFrames)
++			LogPerfSamples();
++		break;
++	}
++	}
++}
++#endif
++
++} // namespace devilution
+diff --git a/Source/engine/layered_present.hpp b/Source/engine/layered_present.hpp
+new file mode 100644
+index 0000000..ec81eca
+--- /dev/null
++++ b/Source/engine/layered_present.hpp
+@@ -0,0 +1,152 @@
++/**
++ * @file layered_present.hpp
++ *
++ * Layered renderer ("Independent Zoom", SDL2 only): the world is drawn into its own 8-bit surface
++ * (`WorldBuffer()`, size W of the current `WorldView`), the UI into the keyed back buffer (`PalSurface`,
++ * see `ui_layer.hpp`). At present time both are expanded through the palette into ARGB textures and the
++ * GPU draws the UI (with alpha) over the world.
++ */
++#pragma once
++
++#include <cstdint>
++#include <span>
++
++#ifdef USE_SDL3
++#include <SDL3/SDL_pixels.h>
++#else
++#include <SDL.h>
++#endif
++
++#include "engine/render/ui_layer.hpp"
++#include "engine/render/world_view.hpp"
++#include "engine/size.hpp"
++#include "engine/surface.hpp"
++
++namespace devilution {
++
++/** @brief Builds `lut[c] = 0x00RRGGBB` for every palette colour. */
++void BuildPaletteLut32(const SDL_Color *palette, uint32_t lut[256]);
++
++/**
++ * @brief Expands 8-bit pixels to opaque ARGB8888: `lut[c] | 0xFF000000`.
++ * @param dstPitch Destination pitch in bytes.
++ */
++void ExpandIndexed(const uint8_t *src, int srcPitch, uint32_t *dst, int dstPitch, int width, int height, const uint32_t lut[256]);
++
++/**
++ * @brief Expands the keyed UI layer to ARGB8888: `UiKeyTransparent` is fully transparent, `UiKeyHalf` is
++ * the half plane colour at alpha 0x80, any other colour is opaque.
++ * @param half Half plane, same pitch as `src`.
++ * @param dstPitch Destination pitch in bytes.
++ */
++void ExpandUiKeyed(const uint8_t *src, const uint8_t *half, int srcPitch, uint32_t *dst, int dstPitch, int width, int height, const uint32_t lut[256]);
++
++/** @brief The 8-bit pixels of a layered frame. */
++struct LayeredFrame {
++	/** @brief World layer, `view.size` pixels. */
++	const uint8_t *world;
++	int worldPitch;
++	/** @brief Keyed UI layer, `view.uiSize` pixels. */
++	const uint8_t *ui;
++	/** @brief Half plane of the UI layer, same pitch as `ui`. */
++	const uint8_t *half;
++	int uiPitch;
++};
++
++/**
++ * @brief CPU reference of the GPU composite: the world scaled by `view.ws` at `view.originPx`, the UI
++ * scaled by `view.uiScale` into its viewport and blended over it, black elsewhere.
++ *
++ * Sampling is nearest at the output pixel centre. The output is opaque ARGB8888, row-major.
++ * @param out At least `output.width * output.height` pixels.
++ */
++void ComposeLayersCpu(const WorldView &view, const LayeredFrame &frame, const uint32_t lut[256], Size output, std::span<uint32_t> out);
++
++/** @brief Points of a layered frame timed by the performance log (environment variable `DEVILUTIONX_PERF_LOG=1`). */
++enum class LayeredPerfEvent : uint8_t {
++	FrameStart,
++	WorldDrawStart,
++	WorldDrawEnd,
++	PresentStart,
++	FrameEnd,
++};
++
++/** @brief Average and 95th percentile of a series of frame times, in milliseconds. */
++struct PerfSummary {
++	double average;
++	double p95;
++};
++
++/** @brief Summarizes frame times. The p95 is the smallest sample that at least 95 % of the samples do not exceed. */
++PerfSummary SummarizeFrameTimes(std::span<const float> milliseconds);
++
++#ifdef DVL_LAYERED_RENDERER
++/** @brief The world surface of the layered renderer (W of the current view). Empty when not allocated. */
++Surface WorldBuffer();
++
++/**
++ * @brief Starts a layered frame: refreshes the view if the output changed, fills the UI layer with
++ * `UiKeyTransparent` and enables the layered present mode.
++ *
++ * May turn the layered renderer off (e.g. the renderer is gone), so callers re-check `IsLayeredActive()`.
++ */
++void BeginLayeredFrame();
++
++/** @brief Leaves the layered present mode. The next present uses the upstream path. */
++void EndLayeredMode();
++
++/** @brief Rebuilds the key remap table from `logical_palette`. Call after the blending table changes. */
++void RebuildUiKeyRemap();
++
++/** @brief (Re)allocates or frees the world surface and the half plane for the current view. Called by `RecalcWorldView()`. */
++void UpdateLayeredBuffers();
++
++/** @brief Frees everything owned by the layered renderer. Must run before the renderer is destroyed. */
++void FreeLayeredResources();
++
++/**
++ * @brief Presents the layered frame: expands both layers into their textures and composites them.
++ * @return false if the layered frame cannot be presented; the layered present mode is then ended.
++ */
++bool LayeredPresent();
++
++/** @brief `ComposeLayersCpu` of the current layered frame with the current system palette. */
++void ComposeLayersCpu(Size output, std::span<uint32_t> out);
++
++/**
++ * @brief Records a timing point for the performance log. A no-op unless `DEVILUTIONX_PERF_LOG=1` and the frame is layered.
++ *
++ * Every 300 layered frames the average and the p95 of the world draw, UI draw, expand, present and whole
++ * frame times are logged. The present time includes the wait for vsync and the frame limiter.
++ */
++void LayeredPerfMark(LayeredPerfEvent event);
++#else
++inline Surface WorldBuffer()
++{
++	return {};
++}
++inline void BeginLayeredFrame()
++{
++}
++inline void EndLayeredMode()
++{
++}
++inline void RebuildUiKeyRemap()
++{
++}
++inline void UpdateLayeredBuffers()
++{
++}
++inline void FreeLayeredResources()
++{
++}
++inline bool LayeredPresent()
++{
++	return false;
++}
++inline void LayeredPerfMark(LayeredPerfEvent /*event*/)
++{
++}
++#endif
++
++} // namespace devilution
+diff --git a/Source/engine/palette.cpp b/Source/engine/palette.cpp
+index d773271..ed3a902 100644
+--- a/Source/engine/palette.cpp
++++ b/Source/engine/palette.cpp
+@@ -21,6 +21,7 @@
+ #include "engine/backbuffer_state.hpp"
+ #include "engine/demomode.h"
+ #include "engine/dx.h"
++#include "engine/layered_present.hpp"
+ #include "engine/load_file.hpp"
+ #include "engine/random.hpp"
+ #include "headless_mode.hpp"
+@@ -197,6 +198,7 @@ void LoadPaletteAndInitBlending(const char *path)
+ 	} else {
+ 		GenerateBlendedLookupTable(logical_palette.data());
+ 	}
++	RebuildUiKeyRemap();
+ }
+ 
+ void LoadRndLvlPal(dungeon_type l)
+@@ -409,6 +411,7 @@ void SetLogicalPaletteColor(unsigned i, const SDL_Color &color)
+ 	ApplyGlobalBrightnessSingleColor(system_palette[i], logical_palette[i]);
+ 	SystemPaletteUpdated(i, 1);
+ 	UpdateBlendedLookupTableSingleColor(logical_palette.data(), i);
++	RebuildUiKeyRemap();
+ }
+ 
+ } // namespace devilution
+diff --git a/Source/engine/render/blit_impl.hpp b/Source/engine/render/blit_impl.hpp
+index 3be4300..eee0c13 100644
+--- a/Source/engine/render/blit_impl.hpp
++++ b/Source/engine/render/blit_impl.hpp
+@@ -6,6 +6,7 @@
+ #include <version>
+ 
+ #include "engine/render/light_render.hpp"
++#include "engine/render/ui_layer.hpp"
+ #include "utils/attributes.h"
+ #include "utils/palette_blending.hpp"
+ 
+@@ -144,6 +145,56 @@ struct BlitBlendedWithMap {
+ 	}
+ };
+ 
++// Keyed variants of the blended blitters for the UI layer of a layered frame (see `BlendKeyedPixel`).
++
++inline DVL_NO_INLINE DVL_ATTRIBUTE_HOT void BlitFillBlendedKeyed(uint8_t *dst, unsigned length, uint8_t color, const UiKeyedTarget &target)
++{
++	for (unsigned i = 0; i < length; ++i) {
++		BlendKeyedPixel(dst + i, color, target);
++	}
++}
++
++inline DVL_NO_INLINE DVL_ATTRIBUTE_HOT void BlitPixelsBlendedKeyed(uint8_t *DVL_RESTRICT dst, const uint8_t *DVL_RESTRICT src, unsigned length, const UiKeyedTarget &target)
++{
++	for (unsigned i = 0; i < length; ++i) {
++		BlendKeyedPixel(dst + i, src[i], target);
++	}
++}
++
++inline DVL_NO_INLINE DVL_ATTRIBUTE_HOT void BlitPixelsBlendedWithMapKeyed(uint8_t *DVL_RESTRICT dst, const uint8_t *DVL_RESTRICT src, unsigned length, const uint8_t *DVL_RESTRICT colorMap, const UiKeyedTarget &target)
++{
++	for (unsigned i = 0; i < length; ++i) {
++		BlendKeyedPixel(dst + i, colorMap[src[i]], target);
++	}
++}
++
++struct BlitBlendedKeyed {
++	UiKeyedTarget target;
++
++	DVL_ALWAYS_INLINE DVL_ATTRIBUTE_HOT void operator()(unsigned length, uint8_t *DVL_RESTRICT dst, const uint8_t *DVL_RESTRICT src) const
++	{
++		BlitPixelsBlendedKeyed(dst, src, length, target);
++	}
++	DVL_ALWAYS_INLINE DVL_ATTRIBUTE_HOT void operator()(unsigned length, uint8_t color, uint8_t *DVL_RESTRICT dst) const
++	{
++		BlitFillBlendedKeyed(dst, length, color, target);
++	}
++};
++
++struct BlitBlendedWithMapKeyed {
++	const uint8_t *DVL_RESTRICT colorMap;
++	UiKeyedTarget target;
++
++	DVL_ALWAYS_INLINE DVL_ATTRIBUTE_HOT void operator()(unsigned length, uint8_t *DVL_RESTRICT dst, const uint8_t *DVL_RESTRICT src) const
++	{
++		BlitPixelsBlendedWithMapKeyed(dst, src, length, colorMap, target);
++	}
++	DVL_ALWAYS_INLINE DVL_ATTRIBUTE_HOT void operator()(unsigned length, uint8_t color, uint8_t *DVL_RESTRICT dst) const
++	{
++		BlitFillBlendedKeyed(dst, length, colorMap[color], target);
++	}
++};
++
+ inline DVL_NO_INLINE DVL_ATTRIBUTE_HOT void BlitFillBlendedWithLightmap(uint8_t *dst, unsigned length, uint8_t color, const Lightmap &lightmap)
+ {
+ 	DVL_ASSUME(length != 0);
+diff --git a/Source/engine/render/clx_render.cpp b/Source/engine/render/clx_render.cpp
+index d24fdea..99eed35 100644
+--- a/Source/engine/render/clx_render.cpp
++++ b/Source/engine/render/clx_render.cpp
+@@ -11,6 +11,7 @@
+ 
+ #include "engine/point.hpp"
+ #include "engine/render/blit_impl.hpp"
++#include "engine/render/ui_layer.hpp"
+ #include "engine/surface.hpp"
+ #include "utils/attributes.h"
+ #include "utils/clx_decode.hpp"
+@@ -601,11 +602,19 @@ void ClxDrawWithLightmap(const Surface &out, Point position, ClxSprite clx, cons
+ 
+ void ClxDrawBlended(const Surface &out, Point position, ClxSprite clx)
+ {
++	if (IsKeyedUiLayer(out)) {
++		DoRenderBackwards(out, position, clx.pixelData(), clx.pixelDataSize(), clx.width(), clx.height(), BlitBlendedKeyed { GetUiKeyedTarget() });
++		return;
++	}
+ 	DoRenderBackwards(out, position, clx.pixelData(), clx.pixelDataSize(), clx.width(), clx.height(), BlitBlended {});
+ }
+ 
+ void ClxDrawBlendedTRN(const Surface &out, Point position, ClxSprite clx, const uint8_t *trn)
+ {
++	if (IsKeyedUiLayer(out)) {
++		DoRenderBackwards(out, position, clx.pixelData(), clx.pixelDataSize(), clx.width(), clx.height(), BlitBlendedWithMapKeyed { trn, GetUiKeyedTarget() });
++		return;
++	}
+ 	DoRenderBackwards(out, position, clx.pixelData(), clx.pixelDataSize(), clx.width(), clx.height(), BlitBlendedWithMap { trn });
+ }
+ 
+diff --git a/Source/engine/render/primitive_render.cpp b/Source/engine/render/primitive_render.cpp
+index 9063eb3..f718573 100644
+--- a/Source/engine/render/primitive_render.cpp
++++ b/Source/engine/render/primitive_render.cpp
+@@ -5,6 +5,7 @@
+ #include <cstring>
+ 
+ #include "engine/point.hpp"
++#include "engine/render/ui_layer.hpp"
+ #include "engine/size.hpp"
+ #include "engine/surface.hpp"
+ #include "utils/palette_blending.hpp"
+@@ -77,6 +78,20 @@ void DrawHalfTransparentBlendedRectTo(const Surface &out, unsigned sx, unsigned
+ #define DrawHalfTransparentBlendedRectTo DrawHalfTransparentUnalignedBlendedRectTo
+ #endif
+ 
++/** @brief Keyed variant of `DrawHalfTransparentUnalignedBlendedRectTo` for the UI layer of a layered frame. */
++void DrawHalfTransparentKeyedRectTo(const Surface &out, unsigned sx, unsigned sy, unsigned width, unsigned height, uint8_t color)
++{
++	const UiKeyedTarget target = GetUiKeyedTarget();
++	uint8_t *pix = out.at(static_cast<int>(sx), static_cast<int>(sy));
++	const unsigned skipX = out.pitch() - width;
++	for (unsigned y = 0; y < height; ++y) {
++		for (unsigned x = 0; x < width; ++x, ++pix) {
++			BlendKeyedPixel(pix, color, target);
++		}
++		pix += skipX;
++	}
++}
++
+ } // namespace
+ 
+ void FillRect(const Surface &out, int x, int y, int width, int height, uint8_t colorIndex)
+@@ -136,6 +151,14 @@ void DrawHalfTransparentHorizontalLine(const Surface &out, Point from, int width
+ 	const int x0 = std::max(0, from.x);
+ 	const int x1 = std::min(out.w(), from.x + width);
+ 
++	if (IsKeyedUiLayer(out)) {
++		const UiKeyedTarget target = GetUiKeyedTarget();
++		for (int x = x0; x < x1; ++x) {
++			BlendKeyedPixel(out.at(x, from.y), colorIndex, target);
++		}
++		return;
++	}
++
+ 	for (int x = x0; x < x1; ++x) {
+ 		SetHalfTransparentPixel(out, { x, from.y }, colorIndex);
+ 	}
+@@ -151,6 +174,14 @@ void DrawHalfTransparentVerticalLine(const Surface &out, Point from, int height,
+ 	const int y0 = std::max(0, from.y);
+ 	const int y1 = std::min(out.h(), from.y + height);
+ 
++	if (IsKeyedUiLayer(out)) {
++		const UiKeyedTarget target = GetUiKeyedTarget();
++		for (int y = y0; y < y1; ++y) {
++			BlendKeyedPixel(out.at(from.x, y), colorIndex, target);
++		}
++		return;
++	}
++
+ 	for (int y = y0; y < y1; ++y) {
+ 		SetHalfTransparentPixel(out, { from.x, y }, colorIndex);
+ 	}
+@@ -181,6 +212,11 @@ void DrawHalfTransparentRectTo(const Surface &out, int sx, int sy, int width, in
+ 		height = out.h() - sy;
+ 	}
+ 
++	if (IsKeyedUiLayer(out)) {
++		DrawHalfTransparentKeyedRectTo(out, sx, sy, width, height, 0);
++		return;
++	}
++
+ 	DrawHalfTransparentBlendedRectTo(out, sx, sy, width, height);
+ }
+ 
+@@ -209,6 +245,11 @@ void DrawHalfTransparentRectTo(const Surface &out, int sx, int sy, int width, in
+ 		height = out.h() - sy;
+ 	}
+ 
++	if (IsKeyedUiLayer(out)) {
++		DrawHalfTransparentKeyedRectTo(out, sx, sy, width, height, color);
++		return;
++	}
++
+ 	DrawHalfTransparentUnalignedBlendedRectTo(out, sx, sy, width, height, color);
+ }
+ 
+@@ -216,6 +257,10 @@ void SetHalfTransparentPixel(const Surface &out, Point position, uint8_t color)
+ {
+ 	if (out.InBounds(position)) {
+ 		uint8_t *pix = out.at(position.x, position.y);
++		if (IsKeyedUiLayer(out)) {
++			BlendKeyedPixel(pix, color, GetUiKeyedTarget());
++			return;
++		}
+ 		const auto &lookupTable = paletteTransparencyLookup[color];
+ 		*pix = lookupTable[*pix];
+ 	}
+diff --git a/Source/engine/render/scrollrt.cpp b/Source/engine/render/scrollrt.cpp
+index 31e551c..17fdf1d 100644
+--- a/Source/engine/render/scrollrt.cpp
++++ b/Source/engine/render/scrollrt.cpp
+@@ -30,11 +30,13 @@
+ #include "engine/backbuffer_state.hpp"
+ #include "engine/displacement.hpp"
+ #include "engine/dx.h"
++#include "engine/layered_present.hpp"
+ #include "engine/point.hpp"
+ #include "engine/render/clx_render.hpp"
+ #include "engine/render/dun_render.hpp"
+ #include "engine/render/light_render.hpp"
+ #include "engine/render/text_render.hpp"
++#include "engine/render/world_view.hpp"
+ #include "engine/trn.hpp"
+ #include "engine/world_tile.hpp"
+ #include "game_mode.hpp"
+@@ -1006,7 +1008,7 @@ void DrawTileContent(const Surface &out, const Lightmap &lightmap, Point tilePos
+ #ifdef _DEBUG
+ 				DebugCoordsMap[tilePosition.x + (tilePosition.y * MAXDUNX)] = targetBufferPosition;
+ #endif
+-				if (tilePosition.x + 1 < MAXDUNX && tilePosition.y - 1 >= 0 && targetBufferPosition.x + TILE_WIDTH <= gnScreenWidth) {
++				if (tilePosition.x + 1 < MAXDUNX && tilePosition.y - 1 >= 0 && targetBufferPosition.x + TILE_WIDTH <= out.w()) {
+ 					// Render objects behind walls first to prevent sprites, that are moving
+ 					// between tiles, from poking through the walls as they exceed the tile bounds.
+ 					// A proper fix for this would probably be to layout the scene and render by
+@@ -1175,6 +1177,51 @@ Displacement tileShift;
+ int tileColumns;
+ int tileRows;
+ 
++/**
++ * @brief Layered counterpart of CalcViewportGeometry(): the viewport is the world surface and the hero stands at the view's anchor.
++ */
++void CalcLayeredViewportGeometry(const WorldView &view)
++{
++	const int screenWidth = view.size.width;
++	const Point playerPosition = view.anchor;
++
++	const int tilesToTop = (playerPosition.y + TILE_HEIGHT - 1) / TILE_HEIGHT;
++	const int tilesToLeft = (playerPosition.x + TILE_WIDTH - 1) / TILE_WIDTH;
++
++	// Location of the center of the tile from which to start rendering, relative to the viewport origin
++	Point startPosition = playerPosition - Displacement { tilesToLeft * TILE_WIDTH, tilesToTop * TILE_HEIGHT };
++
++	// Position of the tile from which to start rendering in tile space,
++	// relative to the tile the player character occupies
++	tileShift = { 0, 0 };
++	tileShift += Displacement(Direction::North) * tilesToTop;
++	tileShift += Displacement(Direction::West) * tilesToLeft;
++
++	// The rendering loop expects to start on a row with fewer columns
++	if (tilesToLeft * TILE_WIDTH >= playerPosition.x) {
++		startPosition += Displacement { TILE_WIDTH / 2, -TILE_HEIGHT / 2 };
++		tileShift += Displacement(Direction::NorthEast);
++	} else if (tilesToTop * TILE_HEIGHT < playerPosition.y) {
++		// There is one row above the current row that needs to be rendered,
++		// but we skip to the row above it because it has too many columns
++		startPosition += Displacement { 0, -TILE_HEIGHT };
++		tileShift += Displacement(Direction::North);
++	}
++
++	// Location of the bottom-left corner of the bounding box around the
++	// tile from which to start rendering, relative to the viewport origin
++	tileOffset = { startPosition.x - (TILE_WIDTH / 2), startPosition.y + (TILE_HEIGHT / 2) - 1 };
++
++	// Compute the number of rows to be rendered as well as
++	// the number of columns to be rendered in the first row
++	const int viewportHeight = view.size.height;
++	const Point renderStart = startPosition - Displacement { TILE_WIDTH / 2, TILE_HEIGHT / 2 };
++	tileRows = (viewportHeight - renderStart.y + TILE_HEIGHT / 2 - 1) / (TILE_HEIGHT / 2);
++	tileColumns = (screenWidth - renderStart.x + TILE_WIDTH - 1) / TILE_WIDTH;
++}
++
++} // namespace
++
+ void CalcFirstTilePosition(Point &position, Displacement &offset)
+ {
+ 	// Adjust by player offset and tile grid alignment
+@@ -1186,7 +1233,7 @@ void CalcFirstTilePosition(Point &position, Displacement &offset)
+ 	position += tileShift;
+ 
+ 	// Skip rendering parts covered by the panels
+-	if (CanPanelsCoverView() && (IsLeftPanelOpen() || IsRightPanelOpen())) {
++	if (!IsLayeredActive() && CanPanelsCoverView() && (IsLeftPanelOpen() || IsRightPanelOpen())) {
+ 		const int multiplier = (*GetOptions().Graphics.zoom) ? 1 : 2;
+ 		position += Displacement(Direction::East) * multiplier;
+ 		offset.deltaX += -TILE_WIDTH * multiplier / 2 / 2;
+@@ -1220,6 +1267,8 @@ void CalcFirstTilePosition(Point &position, Displacement &offset)
+ 	}
+ }
+ 
++namespace {
++
+ /**
+  * @brief Configure render and process screen rows
+  * @param fullOut Buffer to render to
+@@ -1228,8 +1277,12 @@ void CalcFirstTilePosition(Point &position, Displacement &offset)
+  */
+ void DrawGame(const Surface &fullOut, Point position, Displacement offset)
+ {
++	// A layered frame draws the world into the world surface, which is the whole view area
++	const bool layered = PresentLayered();
++
+ 	// Limit rendering to the view area
+-	const Surface &out = !*GetOptions().Graphics.zoom
++	const Surface &out = layered ? fullOut
++	    : !*GetOptions().Graphics.zoom
+ 	    ? fullOut.subregionY(0, gnViewportHeight)
+ 	    : fullOut.subregionY(0, (gnViewportHeight + 1) / 2);
+ 
+@@ -1237,7 +1290,7 @@ void DrawGame(const Surface &fullOut, Point position, Displacement offset)
+ 	int rows = tileRows;
+ 
+ 	// Skip rendering parts covered by the panels
+-	if (CanPanelsCoverView() && (IsLeftPanelOpen() || IsRightPanelOpen())) {
++	if (!layered && CanPanelsCoverView() && (IsLeftPanelOpen() || IsRightPanelOpen())) {
+ 		columns -= (*GetOptions().Graphics.zoom) ? 2 : 4;
+ 	}
+ 
+@@ -1274,7 +1327,7 @@ void DrawGame(const Surface &fullOut, Point position, Displacement offset)
+ #endif
+ 
+ 	Lightmap lightmap = Lightmap::build(*GetOptions().Graphics.perPixelLighting, position, Point {} + offset,
+-	    gnScreenWidth, gnViewportHeight, rows, columns,
++	    layered ? out.w() : gnScreenWidth, layered ? out.h() : gnViewportHeight, rows, columns,
+ 	    out.at(0, 0), out.pitch(), LightTables, FullyLitLightTable, FullyDarkLightTable,
+ 	    dLight, MicroTileLen);
+ 
+@@ -1282,7 +1335,7 @@ void DrawGame(const Surface &fullOut, Point position, Displacement offset)
+ 	DrawTileContent(out, lightmap, position, Point {} + offset, rows, columns);
+ 	DrawOOB(out, lightmap, position, Point {} + offset, rows, columns);
+ 
+-	if (*GetOptions().Graphics.zoom) {
++	if (!layered && *GetOptions().Graphics.zoom) {
+ 		Zoom(fullOut.subregionY(0, gnViewportHeight));
+ 	}
+ 
+@@ -1317,7 +1370,9 @@ void DrawView(const Surface &out, Point startPosition)
+ #endif
+ 	Displacement offset = {};
+ 	CalcFirstTilePosition(startPosition, offset);
+-	DrawGame(out, startPosition, offset);
++	LayeredPerfMark(LayeredPerfEvent::WorldDrawStart);
++	DrawGame(PresentLayered() ? WorldBuffer() : out, startPosition, offset);
++	LayeredPerfMark(LayeredPerfEvent::WorldDrawEnd);
+ 	if (AutomapActive) {
+ 		DrawAutomap(out.subregionY(0, gnViewportHeight));
+ 	}
+@@ -1328,6 +1383,9 @@ void DrawView(const Surface &out, Point startPosition)
+ 		RedrawEverything();
+ 		std::string debugGridText;
+ 		bool megaTiles = IsDebugGridInMegatiles();
++		// A layered frame has the grid on the (unzoomed) world surface
++		const Surface gridOut = PresentLayered() ? WorldBuffer() : out;
++		const bool zoomed = !PresentLayered() && *GetOptions().Graphics.zoom;
+ 
+ 		for (auto [dunCoordVal, pixelCoords] : DebugCoordsMap) {
+ 			Point dunCoords = { dunCoordVal % MAXDUNX, dunCoordVal / MAXDUNX };
+@@ -1335,19 +1393,19 @@ void DrawView(const Surface &out, Point startPosition)
+ 				continue;
+ 			if (megaTiles)
+ 				pixelCoords += Displacement { 0, TILE_HEIGHT / 2 };
+-			if (*GetOptions().Graphics.zoom)
++			if (zoomed)
+ 				pixelCoords *= 2;
+ 			if (debugGridTextNeeded && GetDebugGridText(dunCoords, debugGridText)) {
+ 				Size tileSize = { TILE_WIDTH, TILE_HEIGHT };
+-				if (*GetOptions().Graphics.zoom)
++				if (zoomed)
+ 					tileSize *= 2;
+-				DrawString(out, debugGridText, { pixelCoords - Displacement { 0, tileSize.height }, tileSize },
++				DrawString(gridOut, debugGridText, { pixelCoords - Displacement { 0, tileSize.height }, tileSize },
+ 				    { .flags = UiFlags::ColorRed | UiFlags::AlignCenter | UiFlags::VerticalCenter });
+ 			}
+ 			if (DebugGrid) {
+ 				int halfTileWidth = TILE_WIDTH / 2;
+ 				int halfTileHeight = TILE_HEIGHT / 2;
+-				if (*GetOptions().Graphics.zoom) {
++				if (zoomed) {
+ 					halfTileWidth *= 2;
+ 					halfTileHeight *= 2;
+ 				}
+@@ -1365,9 +1423,9 @@ void DrawView(const Surface &out, Point startPosition)
+ 					const int dy = 1;
+ 					Point from { originX, center.y };
+ 					int height = halfTileHeight;
+-					if (out.InBounds(from) && out.InBounds(from + Displacement { 2 * dx * height, dy * height })) {
+-						uint8_t *dst = out.at(from.x, from.y);
+-						const int pitch = out.pitch();
++					if (gridOut.InBounds(from) && gridOut.InBounds(from + Displacement { 2 * dx * height, dy * height })) {
++						uint8_t *dst = gridOut.at(from.x, from.y);
++						const int pitch = gridOut.pitch();
+ 						while (height-- > 0) {
+ 							*dst = col;
+ 							dst += dx;
+@@ -1377,9 +1435,9 @@ void DrawView(const Surface &out, Point startPosition)
+ 						}
+ 					} else {
+ 						while (height-- > 0) {
+-							out.SetPixel(from, col);
++							gridOut.SetPixel(from, col);
+ 							from.x += dx;
+-							out.SetPixel(from, col);
++							gridOut.SetPixel(from, col);
+ 							from.x += dx;
+ 							from.y += dy;
+ 						}
+@@ -1604,6 +1662,12 @@ void ShiftGrid(Point *offset, int horizontal, int vertical)
+ 
+ int RowsCoveredByPanel()
+ {
++	if (IsLayeredActive()) {
++		// The hero stands centred above the main panel
++		const WorldView &view = GetWorldView();
++		return std::max(0, view.size.height - 2 * view.anchor.y) / TILE_HEIGHT;
++	}
++
+ 	const auto &mainPanelSize = GetMainPanel().size;
+ 	if (GetScreenWidth() <= mainPanelSize.width) {
+ 		return 0;
+@@ -1619,6 +1683,15 @@ int RowsCoveredByPanel()
+ 
+ void CalcTileOffset(int *offsetX, int *offsetY)
+ {
++	if (IsLayeredActive()) {
++		const Size worldSize = GetWorldView().size;
++		const int x = worldSize.width % TILE_WIDTH;
++		const int y = worldSize.height % TILE_HEIGHT;
++		*offsetX = x != 0 ? (TILE_WIDTH - x) / 2 : 0;
++		*offsetY = y != 0 ? (TILE_HEIGHT - y) / 2 : 0;
++		return;
++	}
++
+ 	const uint16_t screenWidth = GetScreenWidth();
+ 	const uint16_t viewportHeight = GetViewportHeight();
+ 
+@@ -1644,6 +1717,13 @@ void CalcTileOffset(int *offsetX, int *offsetY)
+ 
+ void TilesInView(int *rcolumns, int *rrows)
+ {
++	if (IsLayeredActive()) {
++		const Size worldSize = GetWorldView().size;
++		*rcolumns = (worldSize.width + TILE_WIDTH - 1) / TILE_WIDTH;
++		*rrows = (worldSize.height + TILE_HEIGHT - 1) / TILE_HEIGHT;
++		return;
++	}
++
+ 	const uint16_t screenWidth = GetScreenWidth();
+ 	const uint16_t viewportHeight = GetViewportHeight();
+ 
+@@ -1674,6 +1754,11 @@ void TilesInView(int *rcolumns, int *rrows)
+ 
+ void CalcViewportGeometry()
+ {
++	if (IsLayeredActive()) {
++		CalcLayeredViewportGeometry(GetWorldView());
++		return;
++	}
++
+ 	const int zoomFactor = *GetOptions().Graphics.zoom ? 2 : 1;
+ 	const int screenWidth = GetScreenWidth() / zoomFactor;
+ 	const int screenHeight = GetScreenHeight() / zoomFactor;
+@@ -1740,6 +1825,7 @@ void ClearScreenBuffer()
+ 	if (HeadlessMode)
+ 		return;
+ 
++	EndLayeredMode();
+ 	assert(PalSurface != nullptr);
+ 	SDL_FillSurfaceRect(PalSurface, nullptr, 0);
+ }
+@@ -1837,6 +1923,11 @@ void DrawAndBlit()
+ 		return;
+ 	}
+ 
++	// A layered frame starts with an empty UI layer, so everything on it is redrawn
++	const bool layered = IsLayeredActive();
++	if (!layered)
++		EndLayeredMode();
++
+ 	int hgt = 0;
+ 	bool drawHealth = IsRedrawComponent(PanelDrawComponent::Health);
+ 	bool drawMana = IsRedrawComponent(PanelDrawComponent::Mana);
+@@ -1848,7 +1939,7 @@ void DrawAndBlit()
+ 
+ 	const Rectangle &mainPanel = GetMainPanel();
+ 
+-	if (gnScreenWidth > mainPanel.size.width || IsRedrawEverything()) {
++	if (layered || gnScreenWidth > mainPanel.size.width || IsRedrawEverything()) {
+ 		drawHealth = true;
+ 		drawMana = true;
+ 		drawControlButtons = true;
+@@ -1867,6 +1958,10 @@ void DrawAndBlit()
+ 
+ 	nthread_UpdateProgressToNextGameTick();
+ 
++	if (layered)
++		BeginLayeredFrame();
++	LayeredPerfMark(LayeredPerfEvent::FrameStart);
++
+ 	this_sdl_thread::yield();
+ 	DrawView(out, ViewPosition);
+ 	if (drawCtrlPan) {
+@@ -1909,7 +2004,9 @@ void DrawAndBlit()
+ 	lua::GameDrawComplete();
+ 
+ 	this_sdl_thread::yield();
+-	DrawMain(hgt, drawInfoBox, drawHealth, drawMana, drawBelt, drawControlButtons);
++	// The layered present reads the back buffer directly
++	if (!PresentLayered())
++		DrawMain(hgt, drawInfoBox, drawHealth, drawMana, drawBelt, drawControlButtons);
+ 
+ #ifdef _DEBUG
+ 	DrawConsole(out);
+@@ -1922,7 +2019,9 @@ void DrawAndBlit()
+ 		}
+ 	}
+ 
++	LayeredPerfMark(LayeredPerfEvent::PresentStart);
+ 	RenderPresent();
++	LayeredPerfMark(LayeredPerfEvent::FrameEnd);
+ }
+ 
+ } // namespace devilution
+diff --git a/Source/engine/render/scrollrt.h b/Source/engine/render/scrollrt.h
+index 8cdf539..3f70420 100644
+--- a/Source/engine/render/scrollrt.h
++++ b/Source/engine/render/scrollrt.h
+@@ -57,6 +57,13 @@ void CalcTileOffset(int *offsetX, int *offsetY);
+ void TilesInView(int *columns, int *rows);
+ void CalcViewportGeometry();
+ 
++/**
++ * @brief Calculate the first tile to render and the screen position of the bottom-left corner of its bounding box
++ * @param position Tile the view is centred on, replaced by the first tile to render
++ * @param offset Screen position of the bottom-left corner of the bounding box of the first tile
++ */
++void CalcFirstTilePosition(Point &position, Displacement &offset);
++
+ /**
+  * @brief Calculate the screen position of a given tile
+  * @param tile Position of a dungeon tile
+diff --git a/Source/engine/render/ui_layer.cpp b/Source/engine/render/ui_layer.cpp
+new file mode 100644
+index 0000000..41bbe9d
+--- /dev/null
++++ b/Source/engine/render/ui_layer.cpp
+@@ -0,0 +1,103 @@
++#include "engine/render/ui_layer.hpp"
++
++#include <array>
++#include <cstdint>
++#include <limits>
++
++namespace devilution {
++
++namespace {
++
++/** @brief Colours below this index are colour-cycled in some levels and are not used as key replacements. */
++constexpr unsigned FirstKeyReplacementColor = 32;
++
++constexpr std::array<uint8_t, 256> InitialKeyRemap()
++{
++	std::array<uint8_t, 256> remap {};
++	for (unsigned i = 0; i < remap.size(); ++i)
++		remap[i] = static_cast<uint8_t>(i);
++	// Before a palette is loaded, map the keys to black.
++	remap[UiKeyTransparent] = 0;
++	remap[UiKeyHalf] = 0;
++	return remap;
++}
++
++int ColorDistance(const SDL_Color &a, const SDL_Color &b)
++{
++	const int dr = static_cast<int>(a.r) - static_cast<int>(b.r);
++	const int dg = static_cast<int>(a.g) - static_cast<int>(b.g);
++	const int db = static_cast<int>(a.b) - static_cast<int>(b.b);
++	return (dr * dr) + (dg * dg) + (db * db);
++}
++
++uint8_t NearestKeyReplacement(const SDL_Color *palette, uint8_t key)
++{
++	unsigned best = FirstKeyReplacementColor;
++	int bestDistance = std::numeric_limits<int>::max();
++	for (unsigned i = FirstKeyReplacementColor; i < 256; ++i) {
++		const int distance = ColorDistance(palette[key], palette[i]);
++		if (distance < bestDistance) {
++			best = i;
++			bestDistance = distance;
++		}
++	}
++	return static_cast<uint8_t>(best);
++}
++
++} // namespace
++
++UiLayerState UiLayer = { false, nullptr, nullptr, InitialKeyRemap() };
++
++void SetUiLayerTarget(const void *uiPixels, uint8_t *halfPlane)
++{
++	UiLayer.uiPixels = uiPixels;
++	UiLayer.halfPlane = halfPlane;
++}
++
++void SetPresentLayered(bool presentLayered)
++{
++	UiLayer.presentLayered = presentLayered;
++}
++
++void UpdateUiKeyRemap(const SDL_Color *palette)
++{
++	std::array<uint8_t, 256> &remap = UiLayer.keyRemap;
++	for (unsigned i = 0; i < remap.size(); ++i)
++		remap[i] = static_cast<uint8_t>(i);
++	remap[UiKeyTransparent] = NearestKeyReplacement(palette, UiKeyTransparent);
++	remap[UiKeyHalf] = NearestKeyReplacement(palette, UiKeyHalf);
++}
++
++void ApplyTrnToSurface(const Surface &out, const uint8_t *trn, bool skipCyclingColors)
++{
++	for (int y = 0; y < out.h(); ++y) {
++		uint8_t *dst = out.at(0, y);
++		for (int x = 0; x < out.w(); ++x, ++dst) {
++			if (!skipCyclingColors || *dst >= 32)
++				*dst = trn[*dst];
++		}
++	}
++}
++
++void ApplyTrnToKeyedUiLayer(const Surface &out, const uint8_t *trn, bool skipCyclingColors)
++{
++	const UiKeyedTarget target = GetUiKeyedTarget();
++	for (int y = 0; y < out.h(); ++y) {
++		uint8_t *dst = out.at(0, y);
++		for (int x = 0; x < out.w(); ++x, ++dst) {
++			const uint8_t color = *dst;
++			if (color == UiKeyTransparent)
++				continue;
++			if (color == UiKeyHalf) {
++				uint8_t &half = *target.HalfAt(dst);
++				if (!skipCyclingColors || half >= 32)
++					half = trn[half];
++				continue;
++			}
++			if (!skipCyclingColors || color >= 32)
++				*dst = target.keyRemap[trn[color]];
++		}
++	}
++}
++
++} // namespace devilution
+diff --git a/Source/engine/render/ui_layer.hpp b/Source/engine/render/ui_layer.hpp
+new file mode 100644
+index 0000000..a04a2e9
+--- /dev/null
++++ b/Source/engine/render/ui_layer.hpp
+@@ -0,0 +1,147 @@
++/**
++ * @file ui_layer.hpp
++ *
++ * State of the keyed UI layer of the layered renderer ("Independent Zoom").
++ *
++ * While a layered frame is presented, the 8-bit back buffer (`PalSurface`) holds only the UI. Pixels
++ * the UI does not cover hold `UiKeyTransparent`; pixels covered by a half-transparent UI element hold
++ * `UiKeyHalf`, and the colour blended over the world is kept in a separate "half plane" with the same
++ * pitch. The world is drawn into its own surface and composited below the UI at present time.
++ *
++ * Blending primitives (`DrawHalfTransparentRectTo`, `SetHalfTransparentPixel`, `ClxDrawBlended`, ...)
++ * check `IsKeyedUiLayer(out)` once per call and then apply the keyed rule of `BlendKeyedPixel`.
++ *
++ * This module has no dependency on the renderer so that the render object libraries can use it.
++ */
++#pragma once
++
++#include <array>
++#include <cstdint>
++
++#include "engine/surface.hpp"
++#include "utils/attributes.h"
++#include "utils/palette_blending.hpp"
++
++// The layered renderer needs SDL2 >= 2.0.12 (`SDL_RenderCopyF`, `SDL_SetTextureScaleMode`).
++// SDL1 and SDL3 builds keep the upstream renderer.
++#if !defined(USE_SDL1) && !defined(USE_SDL3)
++#if SDL_VERSION_ATLEAST(2, 0, 12)
++#define DVL_LAYERED_RENDERER
++#endif
++#endif
++
++namespace devilution {
++
++/** @brief UI layer pixel that shows the world. Upstream UI art never uses colours 1..127. */
++inline constexpr uint8_t UiKeyTransparent = 1;
++
++/** @brief UI layer pixel that shows the half plane colour blended 50 % over the world. */
++inline constexpr uint8_t UiKeyHalf = 2;
++
++struct UiLayerState {
++	/** @brief Whether the frame being drawn / presented is layered (sticky until `EndLayeredMode()`). */
++	bool presentLayered = false;
++	/** @brief Pixels of the UI layer surface (`PalSurface->pixels`). */
++	const void *uiPixels = nullptr;
++	/** @brief Half plane: the colour of each `UiKeyHalf` pixel, same pitch as the UI layer. */
++	uint8_t *halfPlane = nullptr;
++	/** @brief Maps blend results that would be read as keys (1, 2) to the nearest real colour. Identity otherwise. */
++	std::array<uint8_t, 256> keyRemap;
++};
++
++extern DVL_API_FOR_TEST UiLayerState UiLayer;
++
++/** @brief What the keyed blitters need to know about the UI layer. */
++struct UiKeyedTarget {
++	const uint8_t *uiPixels;
++	uint8_t *halfPlane;
++	const uint8_t *keyRemap;
++
++	[[nodiscard]] uint8_t *HalfAt(const uint8_t *uiPixel) const
++	{
++		return halfPlane + (uiPixel - uiPixels);
++	}
++};
++
++#ifdef DVL_LAYERED_RENDERER
++/** @brief Whether the current frame is layered: the back buffer holds the keyed UI layer. */
++inline bool PresentLayered()
++{
++	return UiLayer.presentLayered;
++}
++
++/** @brief Whether `out` draws onto the UI layer surface. */
++inline bool IsUiLayer(const Surface &out)
++{
++	return out.surface != nullptr && UiLayer.uiPixels != nullptr && out.surface->pixels == UiLayer.uiPixels;
++}
++#else
++constexpr bool PresentLayered()
++{
++	return false;
++}
++
++inline bool IsUiLayer(const Surface & /*out*/)
++{
++	return false;
++}
++#endif
++
++/** @brief Whether blending onto `out` must use the keyed rule. Evaluate once per primitive call. */
++inline bool IsKeyedUiLayer(const Surface &out)
++{
++	return PresentLayered() && IsUiLayer(out);
++}
++
++inline UiKeyedTarget GetUiKeyedTarget()
++{
++	return { static_cast<const uint8_t *>(UiLayer.uiPixels), UiLayer.halfPlane, UiLayer.keyRemap.data() };
++}
++
++/**
++ * @brief Blends colour `src` 50 % onto the UI layer pixel `dst`.
++ *
++ * - `UiKeyTransparent`: becomes `UiKeyHalf`, the half plane takes `src`.
++ * - `UiKeyHalf`: the half plane colour is blended with `src`.
++ * - any other colour: blended as usual. Results equal to a key are remapped to a real colour.
++ */
++DVL_ALWAYS_INLINE void BlendKeyedPixel(uint8_t *dst, uint8_t src, const UiKeyedTarget &target)
++{
++	const uint8_t dstColor = *dst;
++	if (dstColor == UiKeyTransparent) {
++		*dst = UiKeyHalf;
++		*target.HalfAt(dst) = src;
++	} else if (dstColor == UiKeyHalf) {
++		uint8_t &half = *target.HalfAt(dst);
++		half = target.keyRemap[paletteTransparencyLookup[src][half]];
++	} else {
++		*dst = target.keyRemap[paletteTransparencyLookup[src][dstColor]];
++	}
++}
++
++/** @brief Sets the UI layer surface pixels and the half plane (both may be null). */
++void SetUiLayerTarget(const void *uiPixels, uint8_t *halfPlane);
++
++/** @brief Starts (`true`) or ends (`false`) the layered present mode. */
++void SetPresentLayered(bool presentLayered);
++
++/**
++ * @brief Rebuilds `UiLayer.keyRemap` for `palette`: the keys map to the nearest colour in 32..255,
++ * every other colour maps to itself.
++ */
++void UpdateUiKeyRemap(const SDL_Color *palette);
++
++/**
++ * @brief Applies `trn` to every pixel of `out`.
++ * @param skipCyclingColors Leave colours below 32 alone (Hell: they are colour-cycled).
++ */
++void ApplyTrnToSurface(const Surface &out, const uint8_t *trn, bool skipCyclingColors);
++
++/**
++ * @brief Applies `trn` to the UI layer `out`: `UiKeyTransparent` pixels are left alone, the half plane
++ * colour of `UiKeyHalf` pixels is mapped, other pixels are mapped and remapped away from the keys.
++ * @param skipCyclingColors Leave colours below 32 alone (Hell: they are colour-cycled).
++ */
++void ApplyTrnToKeyedUiLayer(const Surface &out, const uint8_t *trn, bool skipCyclingColors);
++
++} // namespace devilution
+diff --git a/Source/engine/render/world_view.cpp b/Source/engine/render/world_view.cpp
+new file mode 100644
+index 0000000..b1fd1df
+--- /dev/null
++++ b/Source/engine/render/world_view.cpp
+@@ -0,0 +1,365 @@
++#include "engine/render/world_view.hpp"
++
++#include <algorithm>
++#include <cmath>
++#include <cstdlib>
++#include <optional>
++
++#include "control/control.hpp"
++#include "engine/backbuffer_state.hpp"
++#include "engine/demomode.h"
++#include "engine/layered_present.hpp"
++#include "engine/render/scrollrt.h"
++#include "headless_mode.hpp"
++#include "options.h"
++#include "utils/display.h"
++#include "utils/ui_fwd.h"
++
++// The world zoom options exist in SDL2 builds only. The layered renderer itself also needs
++// SDL2 >= 2.0.12 (`DVL_LAYERED_RENDERER`, see ui_layer.hpp). SDL1 and SDL3 builds keep the upstream renderer.
++#if !defined(USE_SDL1) && !defined(USE_SDL3)
++#define DVL_WORLD_ZOOM_OPTIONS
++#endif
++
++namespace devilution {
++
++namespace {
++
++/** @brief Zoom factors offered by the ladder, in ascending order. */
++constexpr int ZoomFactors[] = { 1, 2, 3, 4, 5, 6, 8, 10, 12, 16 };
++
++/** @brief Height of the world in world pixels that the automatic zoom aims for. */
++constexpr int AutoWorldHeight = 540;
++
++WorldView CurrentView {};
++bool LayeredActive = false;
++
++#ifdef DVL_WORLD_ZOOM_OPTIONS
++/** @brief `World Zoom` option value restored by the next `WorldZoomToggle()`. */
++std::optional<int> ZoomReturn;
++
++WheelZoomLimiter WheelLimiter;
++#endif
++
++/** @brief Converts the centre of pixel `p` of a grid with pixel size `fromScale` and origin `fromOrigin` to the target grid. */
++int ConvertPixel(int p, double fromScale, int fromOrigin, double toScale, int toOrigin)
++{
++	return static_cast<int>(std::floor(((p + 0.5) * fromScale + fromOrigin - toOrigin) / toScale));
++}
++
++#ifdef DVL_WORLD_ZOOM_OPTIONS
++std::vector<int> CurrentZoomLadder(int outputHeight)
++{
++	const GraphicsOptions &graphics = GetOptions().Graphics;
++	return ComputeZoomLadder(outputHeight, *graphics.worldZoomMinHeight, *graphics.worldZoomMaxHeight);
++}
++#endif
++
++std::optional<WorldView> ComputeLayeredView()
++{
++#ifdef DVL_LAYERED_RENDERER
++	const GraphicsOptions &graphics = GetOptions().Graphics;
++	if (!*graphics.independentZoom || !*graphics.upscale || renderer == nullptr || HeadlessMode
++	    || demo::IsRunning() || demo::IsRecording()) {
++		return std::nullopt;
++	}
++
++	const Size ui { gnScreenWidth, gnScreenHeight };
++	Size output;
++	if (SDL_GetRendererOutputSize(renderer, &output.width, &output.height) != 0)
++		return std::nullopt;
++	if (ui.width <= 0 || ui.height <= 0 || output.width <= 0 || output.height <= 0)
++		return std::nullopt;
++
++	const bool integerScale = SDL_RenderGetIntegerScale(renderer) == SDL_TRUE;
++	const std::vector<int> ladder = CurrentZoomLadder(output.height);
++	const int ws = ResolveWorldZoom(ladder, *graphics.worldZoom, output.height);
++	return ComputeWorldView(output, ui, ComputeUiPlacement(output, ui, integerScale), ws, GetMainPanel().size.height);
++#else
++	return std::nullopt;
++#endif
++}
++
++#ifdef DVL_WORLD_ZOOM_OPTIONS
++void StepWorldZoom(int direction)
++{
++	if (!IsLayeredActive())
++		return;
++	const int outputHeight = CurrentView.outputSize.height;
++	const std::vector<int> ladder = CurrentZoomLadder(outputHeight);
++	const int ws = ResolveWorldZoom(ladder, *GetOptions().Graphics.worldZoom, outputHeight);
++	SetWorldZoom(StepZoomLadder(ladder, ws, direction));
++	SaveOptions();
++}
++
++void OptionWorldViewChanged()
++{
++	if (RecalcWorldView()) {
++		CalcViewportGeometry();
++		RedrawEverything();
++	}
++}
++
++void OptionWorldZoomChanged()
++{
++	ZoomReturn = std::nullopt;
++	OptionWorldViewChanged();
++}
++
++const auto OptionChangeHandlerIndependentZoom = (GetOptions().Graphics.independentZoom.SetValueChangedCallback(OptionWorldViewChanged), true);
++const auto OptionChangeHandlerWorldZoom = (GetOptions().Graphics.worldZoom.SetValueChangedCallback(OptionWorldZoomChanged), true);
++const auto OptionChangeHandlerWorldZoomMinHeight = (GetOptions().Graphics.worldZoomMinHeight.SetValueChangedCallback(OptionWorldViewChanged), true);
++const auto OptionChangeHandlerWorldZoomMaxHeight = (GetOptions().Graphics.worldZoomMaxHeight.SetValueChangedCallback(OptionWorldViewChanged), true);
++#endif
++
++} // namespace
++
++std::vector<int> ComputeZoomLadder(int outputHeight, int minHeight, int maxHeight)
++{
++	std::vector<int> ladder;
++	if (outputHeight > 0) {
++		for (const int factor : ZoomFactors) {
++			const int worldHeight = (outputHeight + factor - 1) / factor;
++			if (worldHeight >= minHeight && worldHeight <= maxHeight)
++				ladder.push_back(factor);
++		}
++	}
++	if (ladder.empty())
++		ladder.push_back(std::max(1, (outputHeight + AutoWorldHeight / 2) / AutoWorldHeight));
++	return ladder;
++}
++
++int AutoWorldZoom(std::span<const int> ladder, int outputHeight)
++{
++	// Nearest to outputHeight / AutoWorldHeight, compared in output pixels to stay exact.
++	int best = ladder.front();
++	for (const int factor : ladder) {
++		if (std::abs(factor * AutoWorldHeight - outputHeight) < std::abs(best * AutoWorldHeight - outputHeight))
++			best = factor;
++	}
++	return best;
++}
++
++int SnapToZoomLadder(std::span<const int> ladder, int ws)
++{
++	int best = ladder.front();
++	for (const int factor : ladder) {
++		if (std::abs(factor - ws) < std::abs(best - ws))
++			best = factor;
++	}
++	return best;
++}
++
++int StepZoomLadder(std::span<const int> ladder, int ws, int direction)
++{
++	const auto current = std::find(ladder.begin(), ladder.end(), SnapToZoomLadder(ladder, ws));
++	if (direction > 0 && current + 1 != ladder.end())
++		return *(current + 1);
++	if (direction < 0 && current != ladder.begin())
++		return *(current - 1);
++	return *current;
++}
++
++int ResolveWorldZoom(std::span<const int> ladder, int optionValue, int outputHeight)
++{
++	if (optionValue <= 0)
++		return AutoWorldZoom(ladder, outputHeight);
++	return SnapToZoomLadder(ladder, optionValue);
++}
++
++int AutoUiScale(Size output)
++{
++	int scale = std::max(1, output.height / 480);
++	while (scale > 1 && output.width / scale <= 640)
++		scale--;
++	return scale;
++}
++
++UiPlacement ComputeUiPlacement(Size output, Size ui, bool integerScale)
++{
++	if (ui.width <= 0 || ui.height <= 0)
++		return { 1.0F, { 0, 0 }, output };
++
++	// Mirrors SDL2 UpdateLogicalSize (SDL_render.c), including its float arithmetic.
++	const float wantAspect = static_cast<float>(ui.width) / ui.height;
++	const float realAspect = static_cast<float>(output.width) / output.height;
++
++	UiPlacement placement {};
++	Size &viewport = placement.viewportSize;
++	float &scale = placement.scale;
++	if (integerScale) {
++		if (wantAspect > realAspect) {
++			scale = static_cast<float>(output.width / ui.width);
++		} else {
++			scale = static_cast<float>(output.height / ui.height);
++		}
++		if (scale < 1.0F)
++			scale = 1.0F;
++		viewport.width = static_cast<int>(std::floor(ui.width * scale));
++		placement.origin.x = (output.width - viewport.width) / 2;
++		viewport.height = static_cast<int>(std::floor(ui.height * scale));
++		placement.origin.y = (output.height - viewport.height) / 2;
++	} else if (std::fabs(wantAspect - realAspect) < 0.0001) {
++		scale = static_cast<float>(output.width) / ui.width;
++		placement.origin = { 0, 0 };
++		viewport = output;
++	} else if (wantAspect > realAspect) {
++		// Letterbox
++		scale = static_cast<float>(output.width) / ui.width;
++		placement.origin.x = 0;
++		viewport.width = output.width;
++		viewport.height = static_cast<int>(std::floor(ui.height * scale));
++		placement.origin.y = (output.height - viewport.height) / 2;
++	} else {
++		// Side bars
++		scale = static_cast<float>(output.height) / ui.height;
++		placement.origin.y = 0;
++		viewport.height = output.height;
++		viewport.width = static_cast<int>(std::floor(ui.width * scale));
++		placement.origin.x = (output.width - viewport.width) / 2;
++	}
++	return placement;
++}
++
++WorldView ComputeWorldView(Size output, Size ui, UiPlacement placement, int ws, int mainPanelHeight)
++{
++	ws = std::max(1, ws);
++
++	WorldView view {};
++	view.layered = true;
++	view.ws = ws;
++	view.size = { (output.width + ws - 1) / ws, (output.height + ws - 1) / ws };
++	view.originPx = { (output.width - view.size.width * ws) / 2, (output.height - view.size.height * ws) / 2 };
++	view.uiScale = placement.scale;
++	view.uiOriginPx = placement.origin;
++	view.uiViewportSize = placement.viewportSize;
++	view.outputSize = output;
++	view.uiSize = ui;
++	view.anchor = UiToWorld(view, { ui.width / 2, (ui.height - mainPanelHeight) / 2 });
++	return view;
++}
++
++WorldView ComputeLegacyWorldView(Size ui, int mainPanelHeight)
++{
++	WorldView view {};
++	view.layered = false;
++	view.ws = 1;
++	view.size = ui;
++	view.originPx = { 0, 0 };
++	view.uiScale = 1.0F;
++	view.uiOriginPx = { 0, 0 };
++	view.uiViewportSize = ui;
++	view.outputSize = ui;
++	view.uiSize = ui;
++	view.anchor = { ui.width / 2, (ui.height - mainPanelHeight) / 2 };
++	return view;
++}
++
++Point UiToWorld(const WorldView &view, Point uiPoint)
++{
++	return {
++		ConvertPixel(uiPoint.x, view.uiScale, view.uiOriginPx.x, view.ws, view.originPx.x),
++		ConvertPixel(uiPoint.y, view.uiScale, view.uiOriginPx.y, view.ws, view.originPx.y),
++	};
++}
++
++Point WorldToUi(const WorldView &view, Point worldPoint)
++{
++	return {
++		ConvertPixel(worldPoint.x, view.ws, view.originPx.x, view.uiScale, view.uiOriginPx.x),
++		ConvertPixel(worldPoint.y, view.ws, view.originPx.y, view.uiScale, view.uiOriginPx.y),
++	};
++}
++
++const WorldView &GetWorldView()
++{
++	return CurrentView;
++}
++
++bool IsLayeredActive()
++{
++	return LayeredActive;
++}
++
++bool RecalcWorldView()
++{
++	const WorldView view = ComputeLayeredView().value_or(
++	    ComputeLegacyWorldView({ gnScreenWidth, gnScreenHeight }, GetMainPanel().size.height));
++	const bool changed = view.layered != CurrentView.layered || (view.layered && view != CurrentView);
++	CurrentView = view;
++	LayeredActive = view.layered;
++	UpdateLayeredBuffers();
++	return changed;
++}
++
++void SetWorldZoom([[maybe_unused]] int ws)
++{
++#ifdef DVL_WORLD_ZOOM_OPTIONS
++	GetOptions().Graphics.worldZoom.SetValue(ws);
++#endif
++}
++
++void WorldZoomIn()
++{
++#ifdef DVL_WORLD_ZOOM_OPTIONS
++	StepWorldZoom(1);
++#endif
++}
++
++void WorldZoomOut()
++{
++#ifdef DVL_WORLD_ZOOM_OPTIONS
++	StepWorldZoom(-1);
++#endif
++}
++
++void WorldZoomToggle()
++{
++#ifdef DVL_WORLD_ZOOM_OPTIONS
++	if (!IsLayeredActive())
++		return;
++	if (ZoomReturn.has_value()) {
++		const int returnTo = *ZoomReturn;
++		SetWorldZoom(returnTo); // Clears ZoomReturn
++		return;
++	}
++	const int outputHeight = CurrentView.outputSize.height;
++	const std::vector<int> ladder = CurrentZoomLadder(outputHeight);
++	const int optionValue = *GetOptions().Graphics.worldZoom;
++	const int ws = ResolveWorldZoom(ladder, optionValue, outputHeight);
++	SetWorldZoom(SnapToZoomLadder(ladder, 2 * ws)); // Clears ZoomReturn
++	ZoomReturn = optionValue;
++#endif
++}
++
++bool WheelZoomLimiter::Accept(uint32_t nowMs, int direction)
++{
++	direction = direction > 0 ? 1 : -1;
++	const bool afterIdle = !lastEventMs_.has_value() || nowMs - *lastEventMs_ >= IdleMs;
++	const bool reversed = direction != lastDirection_;
++	const bool repeat = !lastStepMs_.has_value() || nowMs - *lastStepMs_ >= RepeatMs;
++	lastEventMs_ = nowMs;
++	lastDirection_ = direction;
++	if (!afterIdle && !reversed && !repeat)
++		return false;
++	lastStepMs_ = nowMs;
++	return true;
++}
++
++void WorldZoomWheel([[maybe_unused]] int direction)
++{
++#ifdef DVL_WORLD_ZOOM_OPTIONS
++	if (!IsLayeredActive() || direction == 0)
++		return;
++	if (WheelLimiter.Accept(SDL_GetTicks(), direction))
++		StepWorldZoom(direction > 0 ? 1 : -1);
++#endif
++}
++
++void SetWorldViewForTesting(const WorldView &view)
++{
++	CurrentView = view;
++	LayeredActive = view.layered;
++}
++
++} // namespace devilution
+diff --git a/Source/engine/render/world_view.hpp b/Source/engine/render/world_view.hpp
+new file mode 100644
+index 0000000..c7fd9d5
+--- /dev/null
++++ b/Source/engine/render/world_view.hpp
+@@ -0,0 +1,187 @@
++/**
++ * @file world_view.hpp
++ *
++ * Geometry of the layered renderer ("Independent Zoom"): the game world is drawn into its own surface
++ * with a whole number of output pixels per world pixel, the UI is drawn on top of it at the logical
++ * screen size.
++ *
++ * Coordinate spaces:
++ * - O: renderer output, in physical pixels (`SDL_GetRendererOutputSize`).
++ * - U: UI / logical screen, `gnScreenWidth` x `gnScreenHeight`. `MousePosition` is in U.
++ * - W: world surface, `ceil(O / ws)` where `ws` is the world zoom (output pixels per world pixel).
++ */
++#pragma once
++
++#include <cstdint>
++#include <optional>
++#include <span>
++#include <vector>
++
++#include "engine/point.hpp"
++#include "engine/size.hpp"
++
++namespace devilution {
++
++/** @brief Integer division rounding towards negative infinity. */
++constexpr int FloorDiv(int a, int b)
++{
++	const int q = a / b;
++	return (a % b != 0 && ((a < 0) != (b < 0))) ? q - 1 : q;
++}
++
++/** @brief Remainder of `FloorDiv`, always in `[0, b)` for `b > 0`. */
++constexpr int PosMod(int a, int b)
++{
++	const int m = a % b;
++	return m < 0 ? m + b : m;
++}
++
++/**
++ * @brief Placement of the UI (logical size U) in the output O, exactly as SDL2 `UpdateLogicalSize` computes it.
++ */
++struct UiPlacement {
++	/** @brief Output pixels per UI pixel (`s_u`). */
++	float scale;
++	/** @brief Top-left corner of the UI viewport in output pixels (`o_u`). */
++	Point origin;
++	/** @brief Size of the UI viewport in output pixels. */
++	Size viewportSize;
++
++	bool operator==(const UiPlacement &other) const = default;
++};
++
++struct WorldView {
++	/** @brief Whether the layered renderer is active for this view. */
++	bool layered;
++	/** @brief World zoom: output pixels per world pixel. */
++	int ws;
++	/** @brief Size of the world surface (W) in world pixels. */
++	Size size;
++	/** @brief Top-left corner of the world surface in output pixels (`o_w`, <= 0: the overscan is cropped). */
++	Point originPx;
++	/** @brief Output pixels per UI pixel (`s_u`). */
++	float uiScale;
++	/** @brief Top-left corner of the UI viewport in output pixels (`o_u`). */
++	Point uiOriginPx;
++	/** @brief Size of the UI viewport in output pixels. */
++	Size uiViewportSize;
++	/** @brief Output size (O) the view was computed for. */
++	Size outputSize;
++	/** @brief UI size (U) the view was computed for. */
++	Size uiSize;
++	/** @brief Position of the hero in world pixels (centre of the area above the main panel). */
++	Point anchor;
++
++	bool operator==(const WorldView &other) const = default;
++};
++
++/**
++ * @brief Zoom levels offered for an output of the given height: the factors from
++ * {1, 2, 3, 4, 5, 6, 8, 10, 12, 16} whose world height `ceil(outputHeight / ws)` lies in `[minHeight, maxHeight]`.
++ *
++ * Never empty: if no factor qualifies, the result is `{ max(1, round(outputHeight / 540)) }`.
++ */
++std::vector<int> ComputeZoomLadder(int outputHeight, int minHeight, int maxHeight);
++
++/** @brief The ladder entry nearest to `outputHeight / 540` (ties go to the smaller factor). */
++int AutoWorldZoom(std::span<const int> ladder, int outputHeight);
++
++/** @brief The ladder entry nearest to `ws` (ties go to the smaller factor). */
++int SnapToZoomLadder(std::span<const int> ladder, int ws);
++
++/**
++ * @brief The next ladder entry after snapping `ws` to the ladder.
++ * @param direction > 0: next larger factor (zoom in), < 0: next smaller factor (zoom out). Clamped to the ladder.
++ */
++int StepZoomLadder(std::span<const int> ladder, int ws, int direction);
++
++/** @brief The effective world zoom for the `World Zoom` option value (0 = Auto; stale values are snapped). */
++int ResolveWorldZoom(std::span<const int> ladder, int optionValue, int outputHeight);
++
++/**
++ * @brief Automatic UI scale for an output size: `floor(O.h / 480)`, decreased while the UI would be
++ * at most 640 pixels wide, at least 1.
++ */
++int AutoUiScale(Size output);
++
++/** @brief Replicates SDL2 `UpdateLogicalSize` (letterbox mode) for logical size `ui` on output `output`. */
++UiPlacement ComputeUiPlacement(Size output, Size ui, bool integerScale);
++
++/** @brief Computes the layered view for world zoom `ws`. The result has `layered == true`. */
++WorldView ComputeWorldView(Size output, Size ui, UiPlacement placement, int ws, int mainPanelHeight);
++
++/**
++ * @brief The view used when the layered renderer is not active: the world is the UI surface itself.
++ * The result has `layered == false`.
++ */
++WorldView ComputeLegacyWorldView(Size ui, int mainPanelHeight);
++
++/** @brief Converts a UI pixel to the world pixel under its centre. */
++Point UiToWorld(const WorldView &view, Point uiPoint);
++
++/** @brief Converts a world pixel to the UI pixel under its centre. */
++Point WorldToUi(const WorldView &view, Point worldPoint);
++
++/** @brief The current view. Only meaningful for rendering and input while `IsLayeredActive()`. */
++const WorldView &GetWorldView();
++
++/**
++ * @brief Whether the layered renderer is active: `Independent Zoom` and `Upscale` are on, a renderer exists,
++ * SDL2 build, not headless, no demo is being played back or recorded.
++ *
++ * Cached by `RecalcWorldView()`.
++ */
++bool IsLayeredActive();
++
++/**
++ * @brief Recomputes the current view and `IsLayeredActive()` from the options and the renderer output size.
++ * @return Whether `IsLayeredActive()` or the layered view changed.
++ */
++bool RecalcWorldView();
++
++/** @brief Sets the `World Zoom` option (0 = Auto). */
++void SetWorldZoom(int ws);
++
++/** @brief Zooms the world in by one ladder step (layered mode only). Persists the option. */
++void WorldZoomIn();
++
++/** @brief Zooms the world out by one ladder step (layered mode only). Persists the option. */
++void WorldZoomOut();
++
++/** @brief Toggles between the current zoom and about twice the current zoom (layered mode only). */
++void WorldZoomToggle();
++
++/**
++ * @brief Turns mouse wheel events into zoom steps.
++ *
++ * Trackpads and touch mice send many small wheel events per gesture (followed by momentum events),
++ * which would otherwise run through the whole zoom ladder at once. A wheel event steps the zoom if the
++ * wheel was idle for `IdleMs` before it, if it reverses the direction, or if the last step is at least
++ * `RepeatMs` old. A notched mouse wheel turned at a normal pace steps once per notch.
++ */
++class WheelZoomLimiter {
++public:
++	static constexpr uint32_t IdleMs = 120;
++	static constexpr uint32_t RepeatMs = 500;
++
++	/**
++	 * @brief Registers a wheel event.
++	 * @param nowMs Time of the event in milliseconds (wrapping 32-bit counter).
++	 * @param direction > 0: zoom in, < 0: zoom out.
++	 * @return Whether the zoom should step.
++	 */
++	bool Accept(uint32_t nowMs, int direction);
++
++private:
++	std::optional<uint32_t> lastEventMs_;
++	std::optional<uint32_t> lastStepMs_;
++	int lastDirection_ = 0;
++};
++
++/** @brief Zooms the world by one ladder step for a Ctrl/Cmd + mouse wheel event, rate limited by `WheelZoomLimiter` (layered mode only). */
++void WorldZoomWheel(int direction);
++
++/** @brief Replaces the current view and `IsLayeredActive()` with `view` (unit tests only). */
++void SetWorldViewForTesting(const WorldView &view);
++
++} // namespace devilution
+diff --git a/Source/init.cpp b/Source/init.cpp
+index 1d73960..b044a88 100644
+--- a/Source/init.cpp
++++ b/Source/init.cpp
+@@ -23,6 +23,8 @@
+ #include "engine/backbuffer_state.hpp"
+ #include "engine/dx.h"
+ #include "engine/events.hpp"
++#include "engine/render/scrollrt.h"
++#include "engine/render/world_view.hpp"
+ #include "game_mode.hpp"
+ #include "headless_mode.hpp"
+ #include "hwcursor.hpp"
+@@ -174,6 +176,10 @@ void MainWndProc(const SDL_Event &event)
+ 	case SDL_WINDOWEVENT_SIZE_CHANGED:
+ #endif
+ 		ReinitializeHardwareCursor();
++		if (RecalcWorldView()) {
++			CalcViewportGeometry();
++			RedrawEverything();
++		}
+ 		break;
+ #ifdef USE_SDL3
+ 	case SDL_EVENT_WINDOW_MOUSE_LEAVE:
+diff --git a/Source/interfac.cpp b/Source/interfac.cpp
+index 32d958c..6fd45f9 100644
+--- a/Source/interfac.cpp
++++ b/Source/interfac.cpp
+@@ -26,6 +26,7 @@
+ #include "engine/clx_sprite.hpp"
+ #include "engine/dx.h"
+ #include "engine/events.hpp"
++#include "engine/layered_present.hpp"
+ #include "engine/load_cel.hpp"
+ #include "engine/load_clx.hpp"
+ #include "engine/palette.h"
+@@ -224,6 +225,7 @@ void FreeCutsceneBackground()
+ 
+ void DrawCutsceneBackground()
+ {
++	EndLayeredMode();
+ 	const Rectangle &uiRectangle = GetUIRectangle();
+ 	const Surface &out = GlobalBackBuffer();
+ 	SDL_FillSurfaceRect(out.surface, nullptr, 0);
+@@ -236,6 +238,7 @@ void DrawCutsceneBackground()
+ 
+ void DrawCutsceneForeground()
+ {
++	EndLayeredMode();
+ 	const Rectangle &uiRectangle = GetUIRectangle();
+ 	const Surface &out = GlobalBackBuffer();
+ 	constexpr int ProgressHeight = 22;
+diff --git a/Source/movie.cpp b/Source/movie.cpp
+index 3a4f6a1..e96f5d1 100644
+--- a/Source/movie.cpp
++++ b/Source/movie.cpp
+@@ -20,6 +20,7 @@
+ #include "engine/backbuffer_state.hpp"
+ #include "engine/demomode.h"
+ #include "engine/events.hpp"
++#include "engine/layered_present.hpp"
+ #include "engine/sound.h"
+ #include "headless_mode.hpp"
+ #include "hwcursor.hpp"
+@@ -44,6 +45,7 @@ void play_movie(const char *pszMovie, bool userCanClose)
+ 	if (HeadlessMode)
+ 		return;
+ 
++	EndLayeredMode();
+ 	movie_playing = true;
+ 
+ 	sound_disable_music(true);
+diff --git a/Source/options.cpp b/Source/options.cpp
+index a2900c0..d9658c5 100644
+--- a/Source/options.cpp
++++ b/Source/options.cpp
+@@ -795,6 +795,12 @@ GraphicsOptions::GraphicsOptions()
+           })
+     , brightness("Brightness Correction", OptionEntryFlags::Invisible, "Brightness Correction", "Brightness correction level.", 0)
+     , zoom("Zoom", OptionEntryFlags::None, N_("Zoom"), N_("Zoom on when enabled."), false)
++#if !defined(USE_SDL1) && !defined(USE_SDL3)
++    , independentZoom("Independent Zoom", OptionEntryFlags::None, N_("Independent Zoom"), N_("Draws the game world on its own layer, so that it can be zoomed in sharp steps independently of the interface. Use + / - or Ctrl/Cmd + mouse wheel to zoom."), true)
++    , worldZoom("World Zoom", OptionEntryFlags::None, N_("World Zoom"), N_("Screen pixels per game world pixel with Independent Zoom. 0 = automatic."), 0, { 0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 16 })
++    , worldZoomMinHeight("World Zoom Min Height", OptionEntryFlags::None, N_("World Zoom Min Height"), N_("Smallest height of the game world, in game pixels, offered by the world zoom levels."), 240, { 180, 240, 270, 360, 480, 540 })
++    , worldZoomMaxHeight("World Zoom Max Height", OptionEntryFlags::None, N_("World Zoom Max Height"), N_("Largest height of the game world, in game pixels, offered by the world zoom levels. Lower is faster."), 1620, { 720, 1080, 1440, 1620, 2160, 2880, 3240 })
++#endif
+     , perPixelLighting("Per-pixel Lighting", OptionEntryFlags::None, N_("Per-pixel Lighting"), N_("Subtile lighting for smoother light gradients."), DEFAULT_PER_PIXEL_LIGHTING)
+     , colorCycling("Color Cycling", OptionEntryFlags::None, N_("Color Cycling"), N_("Color cycling effect used for water, lava, and acid animation."), true)
+     , alternateNestArt("Alternate nest art", OptionEntryFlags::OnlyHellfire | OptionEntryFlags::CantChangeInGame, N_("Alternate nest art"), N_("The game will use an alternative palette for Hellfire’s nest tileset."), false)
+@@ -825,6 +831,12 @@ std::vector<OptionEntryBase *> GraphicsOptions::GetEntries()
+ 		&frameRateControl,
+ 		&brightness,
+ 		&zoom,
++#if !defined(USE_SDL1) && !defined(USE_SDL3)
++		&independentZoom,
++		&worldZoom,
++		&worldZoomMinHeight,
++		&worldZoomMaxHeight,
++#endif
+ 		&showFPS,
+ 		&perPixelLighting,
+ 		&colorCycling,
+diff --git a/Source/options.h b/Source/options.h
+index 98b7d6b..9926649 100644
+--- a/Source/options.h
++++ b/Source/options.h
+@@ -547,6 +547,16 @@ struct GraphicsOptions : OptionCategoryBase {
+ 	OptionEntryInt<int> brightness;
+ 	/** @brief Zoom on start. */
+ 	OptionEntryBoolean zoom;
++#if !defined(USE_SDL1) && !defined(USE_SDL3)
++	/** @brief Draw the game world on its own layer, zoomed independently of the UI (requires Upscale). */
++	OptionEntryBoolean independentZoom;
++	/** @brief Output pixels per game world pixel with Independent Zoom, 0 = automatic. */
++	OptionEntryInt<int> worldZoom;
++	/** @brief Smallest world height (in game pixels) offered by the world zoom levels. */
++	OptionEntryInt<int> worldZoomMinHeight;
++	/** @brief Largest world height (in game pixels) offered by the world zoom levels. */
++	OptionEntryInt<int> worldZoomMaxHeight;
++#endif
+ 	/** @brief Subtile lighting for smoother light gradients. */
+ 	OptionEntryBoolean perPixelLighting;
+ 	/** @brief Enable color cycling animations. */
+diff --git a/Source/qol/floatingnumbers.cpp b/Source/qol/floatingnumbers.cpp
+index 1b42c11..23cbf7c 100644
+--- a/Source/qol/floatingnumbers.cpp
++++ b/Source/qol/floatingnumbers.cpp
+@@ -12,6 +12,7 @@
+ #endif
+ 
+ #include "engine/render/text_render.hpp"
++#include "engine/render/world_view.hpp"
+ #include "options.h"
+ #include "utils/str_cat.hpp"
+ 
+@@ -87,7 +88,10 @@ void DrawFloatingNumbers(const Surface &out, Point viewPosition, Displacement of
+ 		Displacement worldOffset = viewPosition - floatingNum.startPos;
+ 		worldOffset = worldOffset.worldToScreen() + offset + Displacement { TILE_WIDTH / 2, -TILE_HEIGHT / 2 } + floatingNum.startOffset;
+ 
+-		if (*GetOptions().Graphics.zoom) {
++		if (IsLayeredActive()) {
++			const Point uiPosition = WorldToUi(GetWorldView(), Point { worldOffset.deltaX, worldOffset.deltaY });
++			worldOffset = { uiPosition.x, uiPosition.y };
++		} else if (*GetOptions().Graphics.zoom) {
+ 			worldOffset *= 2;
+ 		}
+ 
+diff --git a/Source/qol/itemlabels.cpp b/Source/qol/itemlabels.cpp
+index b482b67..ea2a1a4 100644
+--- a/Source/qol/itemlabels.cpp
++++ b/Source/qol/itemlabels.cpp
+@@ -12,6 +12,7 @@
+ #include "engine/point.hpp"
+ #include "engine/render/clx_render.hpp"
+ #include "engine/render/primitive_render.hpp"
++#include "engine/render/world_view.hpp"
+ #include "gmenu.h"
+ #include "inv.h"
+ #include "options.h"
+@@ -124,7 +125,9 @@ void AddItemToLabelQueue(int id, Point position)
+ 
+ 	position.x += *labelCenterOffsets[index];
+ 	position.y -= TILE_HEIGHT;
+-	if (*GetOptions().Graphics.zoom) {
++	if (IsLayeredActive()) {
++		position = WorldToUi(GetWorldView(), position);
++	} else if (*GetOptions().Graphics.zoom) {
+ 		position *= 2;
+ 	}
+ 	position.x -= nameWidth / 2;
+diff --git a/Source/storm/storm_svid.cpp b/Source/storm/storm_svid.cpp
+index 5f287ef..610b91e 100644
+--- a/Source/storm/storm_svid.cpp
++++ b/Source/storm/storm_svid.cpp
+@@ -30,6 +30,7 @@
+ 
+ #include "engine/assets.hpp"
+ #include "engine/dx.h"
++#include "engine/layered_present.hpp"
+ #include "engine/palette.h"
+ #include "engine/sound.h"
+ #include "options.h"
+@@ -345,6 +346,7 @@ void SVidInitAudioStream(const SmackerAudioInfo &audioInfo)
+ 
+ bool SVidPlayBegin(const char *filename, int flags)
+ {
++	EndLayeredMode();
+ 	if ((flags & 0x10000) != 0 || (flags & 0x20000000) != 0) {
+ 		return false;
+ 	}
+diff --git a/Translations/ru.po b/Translations/ru.po
+index fbe3af6..d73f591 100644
+--- a/Translations/ru.po
++++ b/Translations/ru.po
+@@ -4383,6 +4383,55 @@ msgstr "Ограничение FPS"
+ msgid "Zoom on when enabled."
+ msgstr "Приближает, если включено."
+ 
++#: Source/options.cpp:799
++msgid "Independent Zoom"
++msgstr "Независимое приближение"
++
++#: Source/options.cpp:799
++msgid ""
++"Draws the game world on its own layer, so that it can be zoomed in sharp "
++"steps independently of the interface. Use + / - or Ctrl/Cmd + mouse wheel to "
++"zoom."
++msgstr ""
++"Рисует игровой мир отдельным слоем, чтобы его можно было приближать чёткими "
++"шагами независимо от интерфейса. Приближение: + / - или Ctrl/Cmd + колесо "
++"мыши."
++
++#: Source/options.cpp:800
++msgid "World Zoom"
++msgstr "Приближение мира"
++
++#: Source/options.cpp:800
++msgid ""
++"Screen pixels per game world pixel with Independent Zoom. 0 = automatic."
++msgstr ""
++"Пикселей экрана на пиксель игрового мира при независимом приближении. 0 = "
++"автоматически."
++
++#: Source/options.cpp:801
++msgid "World Zoom Min Height"
++msgstr "Мин. высота мира"
++
++#: Source/options.cpp:801
++msgid ""
++"Smallest height of the game world, in game pixels, offered by the world zoom "
++"levels."
++msgstr ""
++"Наименьшая высота игрового мира в пикселях игры среди уровней приближения "
++"мира."
++
++#: Source/options.cpp:802
++msgid "World Zoom Max Height"
++msgstr "Макс. высота мира"
++
++#: Source/options.cpp:802
++msgid ""
++"Largest height of the game world, in game pixels, offered by the world zoom "
++"levels. Lower is faster."
++msgstr ""
++"Наибольшая высота игрового мира в пикселях игры среди уровней приближения "
++"мира. Чем меньше, тем быстрее."
++
+ #: Source/options.cpp:791
+ msgid "Per-pixel Lighting"
+ msgstr "Попиксельное освещение"
+diff --git a/test/layered_compose_test.cpp b/test/layered_compose_test.cpp
+new file mode 100644
+index 0000000..94548f5
+--- /dev/null
++++ b/test/layered_compose_test.cpp
+@@ -0,0 +1,353 @@
++/**
++ * Acceptance test M1-T4 (issue #4): the composite of the layered renderer matches the upstream
++ * single-surface result.
++ */
++#include <array>
++#include <cstdint>
++#include <cstdlib>
++#include <functional>
++#include <vector>
++
++#include <gtest/gtest.h>
++
++#include "engine/backbuffer_state.hpp"
++#include "engine/dx.h"
++#include "engine/layered_present.hpp"
++#include "engine/palette.h"
++#include "engine/point.hpp"
++#include "engine/render/blit_impl.hpp"
++#include "engine/render/primitive_render.hpp"
++#include "engine/render/ui_layer.hpp"
++#include "engine/render/world_view.hpp"
++#include "engine/size.hpp"
++#include "engine/surface.hpp"
++#include "utils/palette_blending.hpp"
++#include "utils/sdl_wrap.h"
++#include "utils/ui_fwd.h"
++
++namespace devilution {
++namespace {
++
++TEST(LayeredPerfLogTest, SummarizeFrameTimes)
++{
++	EXPECT_EQ(SummarizeFrameTimes({}).average, 0);
++	EXPECT_EQ(SummarizeFrameTimes({}).p95, 0);
++
++	const std::vector<float> single { 4.5F };
++	EXPECT_FLOAT_EQ(SummarizeFrameTimes(single).average, 4.5);
++	EXPECT_FLOAT_EQ(SummarizeFrameTimes(single).p95, 4.5);
++
++	// 300 frames (one log entry) of 1..300 ms in reverse order: p95 is the 285th smallest.
++	std::vector<float> frames;
++	for (int i = 300; i >= 1; --i)
++		frames.push_back(static_cast<float>(i));
++	EXPECT_DOUBLE_EQ(SummarizeFrameTimes(frames).average, 150.5);
++	EXPECT_FLOAT_EQ(SummarizeFrameTimes(frames).p95, 285);
++
++	// Nearest rank rounds up: 95 % of 10 samples is the 10th.
++	const std::vector<float> ten { 1, 1, 1, 1, 1, 1, 1, 1, 1, 9 };
++	EXPECT_FLOAT_EQ(SummarizeFrameTimes(ten).p95, 9);
++}
++
++#ifdef DVL_LAYERED_RENDERER
++
++constexpr int MainPanelHeight = 128;
++
++/** @brief A 6x7x6 colour cube with black, white and two saturated colours on the key indices. */
++std::array<SDL_Color, 256> MakeCubePalette()
++{
++	std::array<SDL_Color, 256> palette;
++	palette[0] = { 0, 0, 0, SDL_ALPHA_OPAQUE };
++	palette[UiKeyTransparent] = { 255, 0, 128, SDL_ALPHA_OPAQUE };
++	palette[UiKeyHalf] = { 0, 128, 255, SDL_ALPHA_OPAQUE };
++	for (unsigned i = 3; i < 255; ++i) {
++		const unsigned j = i - 3;
++		palette[i] = {
++			static_cast<uint8_t>((j % 6) * 51),
++			static_cast<uint8_t>(((j / 6) % 7) * 42),
++			static_cast<uint8_t>(((j / 42) % 6) * 51),
++			SDL_ALPHA_OPAQUE,
++		};
++	}
++	palette[255] = { 255, 255, 255, SDL_ALPHA_OPAQUE };
++	return palette;
++}
++
++uint32_t Rgb(const SDL_Color &color)
++{
++	return (static_cast<uint32_t>(color.r) << 16) | (static_cast<uint32_t>(color.g) << 8) | color.b;
++}
++
++int Channel(uint32_t color, int shift)
++{
++	return static_cast<int>((color >> shift) & 0xFF);
++}
++
++/** @brief Sets up the layered renderer state for the given geometry without a renderer. */
++class LayeredFrameSetup {
++public:
++	LayeredFrameSetup(Size output, Size ui, int ws)
++	    : savedPalSurface_(PalSurface)
++	    , savedScreenWidth_(gnScreenWidth)
++	    , savedScreenHeight_(gnScreenHeight)
++	    , savedViewportHeight_(gnViewportHeight)
++	    , savedLogicalPalette_(logical_palette)
++	    , savedSystemPalette_(system_palette)
++	{
++		gnScreenWidth = ui.width;
++		gnScreenHeight = ui.height;
++		gnViewportHeight = ui.height;
++		uiSurface_ = SDLWrap::CreateRGBSurfaceWithFormat(0, ui.width, ui.height, 8, SDL_PIXELFORMAT_INDEX8);
++		PalSurface = uiSurface_.get();
++
++		logical_palette = MakeCubePalette();
++		system_palette = logical_palette;
++		GenerateBlendedLookupTable(logical_palette.data());
++		RebuildUiKeyRemap();
++
++		view_ = ComputeWorldView(output, ui, ComputeUiPlacement(output, ui, true), ws, MainPanelHeight);
++		SetWorldViewForTesting(view_);
++		UpdateLayeredBuffers();
++		BeginLayeredFrame();
++	}
++
++	~LayeredFrameSetup()
++	{
++		EndLayeredMode();
++		SetWorldViewForTesting(ComputeLegacyWorldView(view_.uiSize, MainPanelHeight));
++		UpdateLayeredBuffers();
++		PalSurface = savedPalSurface_;
++		gnScreenWidth = savedScreenWidth_;
++		gnScreenHeight = savedScreenHeight_;
++		gnViewportHeight = savedViewportHeight_;
++		logical_palette = savedLogicalPalette_;
++		system_palette = savedSystemPalette_;
++	}
++
++	[[nodiscard]] const WorldView &View() const
++	{
++		return view_;
++	}
++
++private:
++	SDLSurfaceUniquePtr uiSurface_;
++	WorldView view_ {};
++	SDL_Surface *savedPalSurface_;
++	uint16_t savedScreenWidth_;
++	uint16_t savedScreenHeight_;
++	uint16_t savedViewportHeight_;
++	std::array<SDL_Color, 256> savedLogicalPalette_;
++	std::array<SDL_Color, 256> savedSystemPalette_;
++};
++
++void DrawWorldPattern(const Surface &world)
++{
++	for (int y = 0; y < world.h(); ++y) {
++		for (int x = 0; x < world.w(); ++x) {
++			*world.at(x, y) = static_cast<uint8_t>((x * 7) + (y * 13) + ((x * y) >> 5));
++		}
++	}
++}
++
++/**
++ * @brief A UI with opaque, transparent and half-transparent parts, drawn by the same primitives
++ * on any 8-bit surface of at least 960x540.
++ */
++void DrawUiScene(const Surface &out)
++{
++	// Main panel and some opaque "text".
++	for (int y = 412; y < 540; ++y)
++		DrawHorizontalLine(out, { 0, y }, 960, static_cast<uint8_t>(128 + ((y * 3) % 120)));
++	for (int i = 0; i < 400; ++i)
++		out.SetPixel({ (i * 37) % 960, 160 + ((i * 11) % 90) }, static_cast<uint8_t>(130 + (i % 100)));
++
++	// Half-transparent black and coloured rectangles over the world.
++	DrawHalfTransparentRectTo(out, 101, 50, 199, 100);
++	DrawHalfTransparentRectTo(out, 400, 60, 150, 80, 250);
++	// Half-transparent black rectangle over the world and the panel.
++	DrawHalfTransparentRectTo(out, 700, 380, 200, 100);
++	// Automap-style half-transparent lines and pixels.
++	DrawHalfTransparentHorizontalLine(out, { 50, 300 }, 400, 200);
++	DrawHalfTransparentVerticalLine(out, { 600, 160 }, 200, 150);
++	for (int x = 0; x < 100; ++x)
++		SetHalfTransparentPixel(out, { 300 + x, 350 + (x / 4) }, static_cast<uint8_t>(3 + x));
++
++	// A blended sprite run.
++	std::array<uint8_t, 100> src;
++	for (unsigned i = 0; i < src.size(); ++i)
++		src[i] = static_cast<uint8_t>(40 + i);
++	if (IsKeyedUiLayer(out)) {
++		BlitBlendedKeyed { GetUiKeyedTarget() }(src.size(), out.at(620, 200), src.data());
++	} else {
++		BlitBlended {}(src.size(), out.at(620, 200), src.data());
++	}
++}
++
++TEST(LayeredComposeTest, MatchesSingleSurfaceAt5K)
++{
++	const Size output { 5760, 3240 };
++	const Size ui { 960, 540 };
++	constexpr int Scale = 6;
++	const LayeredFrameSetup setup(output, ui, Scale);
++	const WorldView &view = setup.View();
++	ASSERT_TRUE(PresentLayered());
++	ASSERT_EQ(view.uiScale, Scale);
++	ASSERT_EQ(view.uiOriginPx, Point(0, 0));
++	ASSERT_EQ(view.size, ui);
++	ASSERT_EQ(view.originPx, Point(0, 0));
++
++	// Layered: world into the world surface, UI into the keyed back buffer.
++	const Surface world = WorldBuffer();
++	DrawWorldPattern(world);
++	const Surface uiLayer = GlobalBackBuffer();
++	DrawUiScene(uiLayer);
++
++	// Upstream: the world and then the UI on one 8-bit surface.
++	OwnedSurface legacy(ui.width, ui.height);
++	DrawWorldPattern(legacy);
++	DrawUiScene(legacy);
++
++	std::vector<uint32_t> composite(static_cast<size_t>(output.width) * output.height);
++	ComposeLayersCpu(output, composite);
++
++	int transparent = 0;
++	int opaque = 0;
++	int half = 0;
++	for (int y = 0; y < ui.height; ++y) {
++		for (int x = 0; x < ui.width; ++x) {
++			// Nearest downsample: the centre of the block, and the block must be uniform.
++			const uint32_t pixel = composite[(static_cast<size_t>(y) * Scale + Scale / 2) * output.width + (x * Scale) + (Scale / 2)];
++			for (int by = 0; by < Scale; ++by) {
++				for (int bx = 0; bx < Scale; ++bx) {
++					ASSERT_EQ(composite[(static_cast<size_t>(y) * Scale + by) * output.width + (x * Scale) + bx], pixel) << x << "," << y;
++				}
++			}
++
++			const uint8_t uiColor = *uiLayer.at(x, y);
++			const uint8_t legacyColor = *legacy.at(x, y);
++			if (uiColor == UiKeyHalf) {
++				++half;
++				// The GPU blends the exact colours (upstream picks the nearest palette entry instead):
++				// within 1 of the true 50 % blend, well inside the 8 the acceptance test allows.
++				const uint32_t source = Rgb(system_palette[*GetUiKeyedTarget().HalfAt(uiLayer.at(x, y))]);
++				const uint32_t below = Rgb(system_palette[*world.at(x, y)]);
++				for (const int shift : { 0, 8, 16 }) {
++					const int exact = (Channel(source, shift) + Channel(below, shift)) / 2;
++					ASSERT_LE(std::abs(Channel(pixel, shift) - exact), 1) << x << "," << y;
++				}
++				ASSERT_EQ(pixel >> 24, 0xFFU);
++				continue;
++			}
++			if (uiColor == UiKeyTransparent) {
++				++transparent;
++			} else {
++				++opaque;
++				// Keys are remapped on the UI layer; the scene avoids blends that produce them.
++				ASSERT_NE(legacyColor, UiKeyTransparent) << x << "," << y;
++				ASSERT_NE(legacyColor, UiKeyHalf) << x << "," << y;
++			}
++			ASSERT_EQ(pixel, Rgb(system_palette[legacyColor]) | 0xFF000000) << x << "," << y;
++		}
++	}
++	EXPECT_GT(transparent, 0);
++	EXPECT_GT(opaque, 0);
++	EXPECT_GT(half, 0);
++}
++
++TEST(LayeredComposeTest, WorldFillsLetterboxBars)
++{
++	// 16:10 output, 16:9 UI: the UI viewport has bars at the top and the bottom, the world does not.
++	const Size output { 1280, 800 };
++	const Size ui { 640, 360 };
++	const LayeredFrameSetup setup(output, ui, 3);
++	const WorldView &view = setup.View();
++	ASSERT_TRUE(PresentLayered());
++	ASSERT_EQ(view.uiOriginPx, Point(0, 40));
++	ASSERT_EQ(view.uiViewportSize, Size(1280, 720));
++	ASSERT_EQ(view.size, Size(427, 267));
++
++	const Surface world = WorldBuffer();
++	DrawWorldPattern(world);
++	const Surface uiLayer = GlobalBackBuffer();
++	for (int y = 300; y < 360; ++y)
++		DrawHorizontalLine(uiLayer, { 0, y }, 640, static_cast<uint8_t>(128 + (y % 100)));
++	DrawHalfTransparentRectTo(uiLayer, 10, 10, 100, 50);
++
++	std::vector<uint32_t> composite(static_cast<size_t>(output.width) * output.height);
++	ComposeLayersCpu(output, composite);
++	const auto at = [&](int x, int y) { return composite[static_cast<size_t>(y) * output.width + x]; };
++	const auto worldColor = [&](Point q) { return Rgb(system_palette[*world.at(q.x, q.y)]) | 0xFF000000; };
++
++	// The bars show the world.
++	for (const int y : { 0, 1, 20, 39, 760, 780, 799 }) {
++		for (int x = 0; x < output.width; ++x) {
++			ASSERT_EQ(at(x, y), worldColor({ FloorDiv(x - view.originPx.x, view.ws), FloorDiv(y - view.originPx.y, view.ws) })) << x << "," << y;
++		}
++	}
++
++	// Inside the UI viewport, transparent UI pixels show the world pixel `UiToWorld` maps them to.
++	for (int y = 0; y < ui.height; ++y) {
++		for (int x = 0; x < ui.width; ++x) {
++			const uint8_t uiColor = *uiLayer.at(x, y);
++			const uint32_t pixel = at((x * 2) + 1, 40 + (y * 2) + 1);
++			if (uiColor == UiKeyTransparent) {
++				ASSERT_EQ(pixel, worldColor(UiToWorld(view, { x, y }))) << x << "," << y;
++			} else if (uiColor != UiKeyHalf) {
++				const uint32_t expected = Rgb(system_palette[uiColor]) | 0xFF000000;
++				ASSERT_EQ(at(x * 2, 40 + (y * 2)), expected) << x << "," << y;
++				ASSERT_EQ(pixel, expected) << x << "," << y;
++			}
++		}
++	}
++}
++
++TEST(LayeredComposeTest, EndingTheLayeredModeRedrawsEverything)
++{
++	const LayeredFrameSetup setup({ 1920, 1080 }, { 960, 540 }, 2);
++	ASSERT_TRUE(PresentLayered());
++
++	// The back buffer holds only the keyed UI layer, so the upstream path must redraw everything.
++	RedrawComplete();
++	EndLayeredMode();
++	EXPECT_FALSE(PresentLayered());
++	EXPECT_TRUE(IsRedrawEverything());
++
++	// Without a layered frame there is nothing to end.
++	RedrawComplete();
++	EndLayeredMode();
++	EXPECT_FALSE(IsRedrawEverything());
++}
++
++TEST(LayeredComposeTest, BeginLayeredFrameEndsTheModeWhenNoLongerLayered)
++{
++	const LayeredFrameSetup setup({ 1920, 1080 }, { 960, 540 }, 2);
++	ASSERT_TRUE(PresentLayered());
++
++	// E.g. the renderer output became unusable: the next frame is drawn the upstream way.
++	SetWorldViewForTesting(ComputeLegacyWorldView(setup.View().uiSize, MainPanelHeight));
++	BeginLayeredFrame();
++	EXPECT_FALSE(PresentLayered());
++
++	// Layered again: the frame starts with a transparent UI layer.
++	SetWorldViewForTesting(setup.View());
++	*GlobalBackBuffer().at(10, 10) = 200;
++	BeginLayeredFrame();
++	EXPECT_TRUE(PresentLayered());
++	EXPECT_EQ(*GlobalBackBuffer().at(10, 10), UiKeyTransparent);
++}
++
++TEST(LayeredComposeTest, NotLayeredWithoutAFrame)
++{
++	// Outside of a layered frame nothing is keyed and the composite is black.
++	EXPECT_FALSE(PresentLayered());
++	EXPECT_FALSE(IsLayeredActive());
++	std::vector<uint32_t> composite(16 * 16, 0x12345678);
++	ComposeLayersCpu({ 16, 16 }, composite);
++	for (const uint32_t pixel : composite)
++		EXPECT_EQ(pixel, 0xFF000000);
++}
++
++#endif // DVL_LAYERED_RENDERER
++
++} // namespace
++} // namespace devilution
+diff --git a/test/ui_layer_test.cpp b/test/ui_layer_test.cpp
+new file mode 100644
+index 0000000..b32c07c
+--- /dev/null
++++ b/test/ui_layer_test.cpp
+@@ -0,0 +1,447 @@
++/**
++ * Acceptance test M1-T3 (issue #4): the keyed UI layer of the layered renderer.
++ */
++#include <array>
++#include <cstdint>
++#include <cstring>
++#include <functional>
++#include <vector>
++
++#include <gtest/gtest.h>
++
++#include "control/control.hpp"
++#include "engine/dx.h"
++#include "engine/layered_present.hpp"
++#include "engine/palette.h"
++#include "engine/render/blit_impl.hpp"
++#include "engine/render/primitive_render.hpp"
++#include "engine/render/ui_layer.hpp"
++#include "engine/render/world_view.hpp"
++#include "engine/surface.hpp"
++#include "levels/dun_tile_data.hpp"
++#include "lighting.h"
++#include "utils/palette_blending.hpp"
++#include "utils/sdl_wrap.h"
++#include "utils/ui_fwd.h"
++
++namespace devilution {
++namespace {
++
++TEST(UiLayerExpandTest, ExpandIndexedIsOpaque)
++{
++	std::array<uint32_t, 256> lut;
++	for (unsigned i = 0; i < lut.size(); ++i)
++		lut[i] = (i << 16) | ((255 - i) << 8) | (i ^ 0x5A);
++
++	// 3x2 pixels with padding in both pitches.
++	const std::array<uint8_t, 8> src = { 0, 1, 2, 99, /* row 2 */ 200, 255, 7, 99 };
++	std::array<uint32_t, 10> dst {};
++	ExpandIndexed(src.data(), 4, dst.data(), static_cast<int>(5 * sizeof(uint32_t)), 3, 2, lut.data());
++	EXPECT_EQ(dst[0], lut[0] | 0xFF000000);
++	EXPECT_EQ(dst[1], lut[1] | 0xFF000000);
++	EXPECT_EQ(dst[2], lut[2] | 0xFF000000);
++	EXPECT_EQ(dst[3], 0U);
++	EXPECT_EQ(dst[5], lut[200] | 0xFF000000);
++	EXPECT_EQ(dst[6], lut[255] | 0xFF000000);
++	EXPECT_EQ(dst[7], lut[7] | 0xFF000000);
++	EXPECT_EQ(dst[8], 0U);
++}
++
++TEST(UiLayerExpandTest, ExpandUiKeyedAlpha)
++{
++	std::array<uint32_t, 256> lut;
++	for (unsigned i = 0; i < lut.size(); ++i)
++		lut[i] = (i << 16) | ((255 - i) << 8) | (i ^ 0x5A);
++
++	const std::array<uint8_t, 10> src = { UiKeyTransparent, UiKeyHalf, 0, 128, 255, /* row 2 */ UiKeyHalf, UiKeyTransparent, 3, 77, 77 };
++	const std::array<uint8_t, 10> half = { 9, 77, 5, 5, 5, /* row 2 */ 0, 33, 1, 2, 2 };
++	std::array<uint32_t, 8> dst {};
++	ExpandUiKeyed(src.data(), half.data(), 5, dst.data(), static_cast<int>(4 * sizeof(uint32_t)), 3, 2, lut.data());
++	EXPECT_EQ(dst[0], 0U);
++	EXPECT_EQ(dst[1], (lut[77] & 0xFFFFFF) | 0x80000000);
++	EXPECT_EQ(dst[2], lut[0] | 0xFF000000);
++	EXPECT_EQ(dst[3], 0U);
++	EXPECT_EQ(dst[4], (lut[0] & 0xFFFFFF) | 0x80000000);
++	EXPECT_EQ(dst[5], 0U);
++	EXPECT_EQ(dst[6], lut[3] | 0xFF000000);
++	EXPECT_EQ(dst[7], 0U);
++	for (const uint32_t pixel : dst) {
++		const uint32_t alpha = pixel >> 24;
++		EXPECT_TRUE(alpha == 0 || alpha == 0x80 || alpha == 0xFF);
++	}
++}
++
++#ifdef DVL_LAYERED_RENDERER
++
++constexpr Size OutputSize { 512, 512 };
++constexpr Size UiSize { 256, 256 };
++constexpr int WorldZoom = 2;
++constexpr int MainPanelHeight = 128;
++
++/**
++ * @brief A palette in which the blend of black with colour 3 is exactly colour 1 and the blend of
++ * black with colour 4 is exactly colour 2, so that unmapped blending would produce the keys.
++ */
++std::array<SDL_Color, 256> MakeKeyTrapPalette()
++{
++	std::array<SDL_Color, 256> palette;
++	for (unsigned i = 0; i < palette.size(); ++i) {
++		palette[i].r = static_cast<uint8_t>(60 + ((i * 37) % 196));
++		palette[i].g = static_cast<uint8_t>(60 + ((i * 91) % 196));
++		palette[i].b = static_cast<uint8_t>(60 + ((i * 53) % 196));
++		palette[i].a = SDL_ALPHA_OPAQUE;
++	}
++	palette[0] = { 0, 0, 0, SDL_ALPHA_OPAQUE };
++	palette[UiKeyTransparent] = { 10, 10, 10, SDL_ALPHA_OPAQUE };
++	palette[UiKeyHalf] = { 20, 20, 20, SDL_ALPHA_OPAQUE };
++	palette[3] = { 21, 21, 21, SDL_ALPHA_OPAQUE };
++	palette[4] = { 41, 41, 41, SDL_ALPHA_OPAQUE };
++	return palette;
++}
++
++bool IsKey(uint8_t color)
++{
++	return color == UiKeyTransparent || color == UiKeyHalf;
++}
++
++class UiLayerTest : public ::testing::Test {
++protected:
++	void SetUp() override
++	{
++		savedPalSurface_ = PalSurface;
++		savedScreenWidth_ = gnScreenWidth;
++		savedScreenHeight_ = gnScreenHeight;
++		savedViewportHeight_ = gnViewportHeight;
++		savedLogicalPalette_ = logical_palette;
++		savedSystemPalette_ = system_palette;
++		savedLevelType_ = leveltype;
++		savedPauseTable_ = PauseTable;
++
++		gnScreenWidth = UiSize.width;
++		gnScreenHeight = UiSize.height;
++		gnViewportHeight = UiSize.height;
++		uiSurface_ = SDLWrap::CreateRGBSurfaceWithFormat(0, UiSize.width, UiSize.height, 8, SDL_PIXELFORMAT_INDEX8);
++		PalSurface = uiSurface_.get();
++
++		logical_palette = MakeKeyTrapPalette();
++		system_palette = logical_palette;
++		GenerateBlendedLookupTable(logical_palette.data());
++		RebuildUiKeyRemap();
++
++		SetWorldViewForTesting(ComputeWorldView(OutputSize, UiSize, ComputeUiPlacement(OutputSize, UiSize, true), WorldZoom, MainPanelHeight));
++		UpdateLayeredBuffers();
++		BeginLayeredFrame();
++		ASSERT_TRUE(PresentLayered());
++	}
++
++	void TearDown() override
++	{
++		EndLayeredMode();
++		SetWorldViewForTesting(ComputeLegacyWorldView(UiSize, MainPanelHeight));
++		UpdateLayeredBuffers();
++		PalSurface = savedPalSurface_;
++		gnScreenWidth = savedScreenWidth_;
++		gnScreenHeight = savedScreenHeight_;
++		gnViewportHeight = savedViewportHeight_;
++		logical_palette = savedLogicalPalette_;
++		system_palette = savedSystemPalette_;
++		leveltype = savedLevelType_;
++		PauseTable = savedPauseTable_;
++	}
++
++	static uint8_t &Half(const Surface &out, int x, int y)
++	{
++		return *GetUiKeyedTarget().HalfAt(out.at(x, y));
++	}
++
++	static uint8_t Remap(uint8_t color)
++	{
++		return UiLayer.keyRemap[color];
++	}
++
++private:
++	SDLSurfaceUniquePtr uiSurface_;
++	SDL_Surface *savedPalSurface_ = nullptr;
++	uint16_t savedScreenWidth_ = 0;
++	uint16_t savedScreenHeight_ = 0;
++	uint16_t savedViewportHeight_ = 0;
++	std::array<SDL_Color, 256> savedLogicalPalette_;
++	std::array<SDL_Color, 256> savedSystemPalette_;
++	dungeon_type savedLevelType_ = DTYPE_TOWN;
++	std::array<uint8_t, 256> savedPauseTable_;
++};
++
++TEST_F(UiLayerTest, PaletteProducesKeysWithoutRemap)
++{
++	// Preconditions of the exhaustive test: the plain blend table does produce the keys.
++	ASSERT_EQ(paletteTransparencyLookup[0][3], UiKeyTransparent);
++	ASSERT_EQ(paletteTransparencyLookup[0][4], UiKeyHalf);
++
++	for (unsigned i = 0; i < 256; ++i) {
++		if (IsKey(static_cast<uint8_t>(i))) {
++			EXPECT_GE(UiLayer.keyRemap[i], 32);
++		} else {
++			EXPECT_EQ(UiLayer.keyRemap[i], i);
++		}
++	}
++}
++
++TEST_F(UiLayerTest, FrameStartsTransparent)
++{
++	const Surface ui = GlobalBackBuffer();
++	EXPECT_TRUE(IsKeyedUiLayer(ui));
++	EXPECT_TRUE(IsKeyedUiLayer(ui.subregion(10, 20, 30, 40)));
++	EXPECT_FALSE(IsKeyedUiLayer(WorldBuffer()));
++	EXPECT_EQ(WorldBuffer().w(), UiSize.width);
++	EXPECT_EQ(WorldBuffer().h(), UiSize.height);
++	for (int y = 0; y < ui.h(); ++y) {
++		for (int x = 0; x < ui.w(); ++x) {
++			ASSERT_EQ(*ui.at(x, y), UiKeyTransparent);
++		}
++	}
++}
++
++TEST_F(UiLayerTest, BlackHalfRectOverTransparent)
++{
++	const Surface ui = GlobalBackBuffer();
++	// Unaligned position and width: on the UI layer the aligned fast path must not be used.
++	DrawHalfTransparentRectTo(ui, 3, 5, 101, 7);
++	for (int y = 0; y < ui.h(); ++y) {
++		for (int x = 0; x < ui.w(); ++x) {
++			const bool inside = x >= 3 && x < 104 && y >= 5 && y < 12;
++			if (inside) {
++				ASSERT_EQ(*ui.at(x, y), UiKeyHalf);
++				ASSERT_EQ(Half(ui, x, y), 0);
++			} else {
++				ASSERT_EQ(*ui.at(x, y), UiKeyTransparent);
++			}
++		}
++	}
++}
++
++TEST_F(UiLayerTest, BlackHalfRectOverOpaque)
++{
++	const Surface ui = GlobalBackBuffer();
++	for (int x = 0; x < 256; ++x) {
++		*ui.at(x, 0) = IsKey(static_cast<uint8_t>(x)) ? 0 : static_cast<uint8_t>(x);
++	}
++	DrawHalfTransparentRectTo(ui, 0, 0, 256, 1);
++	for (int x = 0; x < 256; ++x) {
++		const uint8_t d = IsKey(static_cast<uint8_t>(x)) ? 0 : static_cast<uint8_t>(x);
++		EXPECT_EQ(*ui.at(x, 0), Remap(paletteTransparencyLookup[0][d]));
++	}
++	// Colours 3 and 4 blend into the keys; they are remapped to real colours.
++	EXPECT_FALSE(IsKey(*ui.at(3, 0)));
++	EXPECT_FALSE(IsKey(*ui.at(4, 0)));
++}
++
++TEST_F(UiLayerTest, ColoredHalfPixelOverTransparentKeepsColor)
++{
++	const Surface ui = GlobalBackBuffer();
++	for (int color = 0; color < 256; ++color) {
++		SetHalfTransparentPixel(ui, { color, 7 }, static_cast<uint8_t>(color));
++		EXPECT_EQ(*ui.at(color, 7), UiKeyHalf);
++		EXPECT_EQ(Half(ui, color, 7), color);
++	}
++}
++
++TEST_F(UiLayerTest, OpaqueWriteOverHalfIsOpaque)
++{
++	const Surface ui = GlobalBackBuffer();
++	DrawHalfTransparentRectTo(ui, 10, 10, 20, 20, 200);
++	ASSERT_EQ(*ui.at(15, 15), UiKeyHalf);
++	FillRect(ui, 12, 12, 5, 5, 150);
++	EXPECT_EQ(*ui.at(15, 15), 150);
++	EXPECT_EQ(*ui.at(11, 11), UiKeyHalf);
++	EXPECT_EQ(Half(ui, 11, 11), 200);
++}
++
++TEST_F(UiLayerTest, NoBlendOutputIsAKey)
++{
++	const Surface ui = GlobalBackBuffer();
++	const UiKeyedTarget target = GetUiKeyedTarget();
++
++	std::array<uint8_t, 256> reverseMap;
++	for (unsigned i = 0; i < reverseMap.size(); ++i)
++		reverseMap[i] = static_cast<uint8_t>(255 - i);
++
++	using BlendRow = std::function<void(int y, uint8_t source)>;
++	const std::vector<std::pair<const char *, BlendRow>> primitives = {
++		{ "DrawHalfTransparentRectTo(color)", [&](int y, uint8_t s) { DrawHalfTransparentRectTo(ui, 0, y, 256, 1, s); } },
++		{ "SetHalfTransparentPixel", [&](int y, uint8_t s) { for (int x = 0; x < 256; ++x) SetHalfTransparentPixel(ui, { x, y }, s); } },
++		{ "DrawHalfTransparentHorizontalLine", [&](int y, uint8_t s) { DrawHalfTransparentHorizontalLine(ui, { 0, y }, 256, s); } },
++		{ "DrawHalfTransparentVerticalLine", [&](int y, uint8_t s) { for (int x = 0; x < 256; ++x) DrawHalfTransparentVerticalLine(ui, { x, y }, 1, s); } },
++		{ "BlitBlendedKeyed pixels", [&](int y, uint8_t s) {
++		     const std::vector<uint8_t> src(256, s);
++		     BlitBlendedKeyed { target }(256, ui.at(0, y), src.data());
++		 } },
++		{ "BlitBlendedKeyed fill", [&](int y, uint8_t s) { BlitBlendedKeyed { target }(256, s, ui.at(0, y)); } },
++		{ "BlitBlendedWithMapKeyed pixels", [&](int y, uint8_t s) {
++		     const std::vector<uint8_t> src(256, static_cast<uint8_t>(255 - s));
++		     BlitBlendedWithMapKeyed { reverseMap.data(), target }(256, ui.at(0, y), src.data());
++		 } },
++		{ "BlitBlendedWithMapKeyed fill", [&](int y, uint8_t s) { BlitBlendedWithMapKeyed { reverseMap.data(), target }(256, static_cast<uint8_t>(255 - s), ui.at(0, y)); } },
++	};
++
++	for (const auto &[name, blendRow] : primitives) {
++		SCOPED_TRACE(name);
++		int remapped = 0;
++
++		// Every destination colour (1 and 2 are the keys) blended with every source colour.
++		for (int s = 0; s < 256; ++s) {
++			for (int x = 0; x < 256; ++x) {
++				*ui.at(x, s) = static_cast<uint8_t>(x);
++				Half(ui, x, s) = static_cast<uint8_t>(255 - x);
++			}
++		}
++		for (int s = 0; s < 256; ++s)
++			blendRow(s, static_cast<uint8_t>(s));
++		for (int s = 0; s < 256; ++s) {
++			for (int d = 0; d < 256; ++d) {
++				const uint8_t result = *ui.at(d, s);
++				if (d == UiKeyTransparent) {
++					ASSERT_EQ(result, UiKeyHalf) << "s=" << s;
++					ASSERT_EQ(Half(ui, d, s), s);
++				} else if (d == UiKeyHalf) {
++					ASSERT_EQ(result, UiKeyHalf) << "s=" << s;
++					ASSERT_EQ(Half(ui, d, s), Remap(paletteTransparencyLookup[s][255 - d])) << "s=" << s;
++				} else {
++					const uint8_t blended = paletteTransparencyLookup[s][d];
++					if (IsKey(blended))
++						++remapped;
++					ASSERT_FALSE(IsKey(result)) << "s=" << s << " d=" << d;
++					ASSERT_EQ(result, Remap(blended)) << "s=" << s << " d=" << d;
++				}
++			}
++		}
++		EXPECT_GT(remapped, 0);
++
++		// Every half plane colour blended with every source colour.
++		for (int s = 0; s < 256; ++s) {
++			for (int x = 0; x < 256; ++x) {
++				*ui.at(x, s) = UiKeyHalf;
++				Half(ui, x, s) = static_cast<uint8_t>(x);
++			}
++		}
++		for (int s = 0; s < 256; ++s)
++			blendRow(s, static_cast<uint8_t>(s));
++		for (int s = 0; s < 256; ++s) {
++			for (int h = 0; h < 256; ++h) {
++				ASSERT_EQ(*ui.at(h, s), UiKeyHalf);
++				const uint8_t half = Half(ui, h, s);
++				ASSERT_FALSE(IsKey(half)) << "s=" << s << " h=" << h;
++				ASSERT_EQ(half, Remap(paletteTransparencyLookup[s][h])) << "s=" << s << " h=" << h;
++			}
++		}
++	}
++}
++
++TEST_F(UiLayerTest, LegacyBlendingOutsideOfLayeredFrames)
++{
++	// Not the UI layer: blending is unchanged even during a layered frame.
++	OwnedSurface other(16, 1);
++	for (int x = 0; x < 16; ++x)
++		*other.at(x, 0) = static_cast<uint8_t>(x);
++	DrawHalfTransparentRectTo(other, 0, 0, 16, 1);
++	for (int x = 0; x < 16; ++x)
++		EXPECT_EQ(*other.at(x, 0), paletteTransparencyLookup[0][x]);
++	EXPECT_EQ(*other.at(3, 0), UiKeyTransparent);
++
++	// The back buffer outside of a layered frame: upstream behaviour.
++	EndLayeredMode();
++	EXPECT_FALSE(PresentLayered());
++	const Surface ui = GlobalBackBuffer();
++	for (int x = 0; x < 256; ++x)
++		*ui.at(x, 0) = static_cast<uint8_t>(x);
++	DrawHalfTransparentRectTo(ui, 0, 0, 256, 1);
++	SetHalfTransparentPixel(ui, { 0, 1 }, 7);
++	for (int x = 0; x < 256; ++x)
++		EXPECT_EQ(*ui.at(x, 0), paletteTransparencyLookup[0][x]);
++	EXPECT_EQ(*ui.at(3, 0), UiKeyTransparent);
++	EXPECT_EQ(*ui.at(4, 0), UiKeyHalf);
++}
++
++TEST_F(UiLayerTest, RedBackTintsWorldAndUi)
++{
++	// A pause TRN that also produces the keys: 250 -> 1, 251 -> 2.
++	for (unsigned i = 0; i < PauseTable.size(); ++i)
++		PauseTable[i] = static_cast<uint8_t>((i + 7) & 0xFF);
++	const uint8_t *trn = PauseTable.data();
++
++	for (const dungeon_type type : { DTYPE_CATHEDRAL, DTYPE_HELL }) {
++		SCOPED_TRACE(static_cast<int>(type));
++		const bool hell = type == DTYPE_HELL;
++		leveltype = type;
++
++		const Surface world = WorldBuffer();
++		for (int y = 0; y < world.h(); ++y) {
++			for (int x = 0; x < world.w(); ++x)
++				*world.at(x, y) = static_cast<uint8_t>(x + y);
++		}
++		const Surface ui = GlobalBackBuffer();
++		std::memset(PalSurface->pixels, UiKeyTransparent, static_cast<size_t>(PalSurface->pitch) * PalSurface->h);
++		for (int x = 0; x < 256; ++x) {
++			*ui.at(x, 0) = IsKey(static_cast<uint8_t>(x)) ? 200 : static_cast<uint8_t>(x);
++			*ui.at(x, 1) = UiKeyHalf;
++			Half(ui, x, 1) = static_cast<uint8_t>(x);
++			Half(ui, x, 2) = static_cast<uint8_t>(x);
++		}
++
++		RedBack(ui);
++
++		for (int y = 0; y < world.h(); ++y) {
++			for (int x = 0; x < world.w(); ++x) {
++				const auto color = static_cast<uint8_t>(x + y);
++				const uint8_t expected = hell && color < 32 ? color : trn[color];
++				ASSERT_EQ(*world.at(x, y), expected) << x << "," << y;
++			}
++		}
++		for (int x = 0; x < 256; ++x) {
++			const uint8_t opaque = IsKey(static_cast<uint8_t>(x)) ? 200 : static_cast<uint8_t>(x);
++			const uint8_t expectedOpaque = hell && opaque < 32 ? opaque : Remap(trn[opaque]);
++			EXPECT_EQ(*ui.at(x, 0), expectedOpaque) << x;
++			EXPECT_FALSE(IsKey(*ui.at(x, 0))) << x;
++
++			EXPECT_EQ(*ui.at(x, 1), UiKeyHalf);
++			const auto half = static_cast<uint8_t>(x);
++			EXPECT_EQ(Half(ui, x, 1), hell && half < 32 ? half : trn[half]) << x;
++
++			EXPECT_EQ(*ui.at(x, 2), UiKeyTransparent);
++			EXPECT_EQ(Half(ui, x, 2), x);
++		}
++	}
++}
++
++TEST_F(UiLayerTest, ExpandFrameAlpha)
++{
++	const Surface ui = GlobalBackBuffer();
++	FillRect(ui, 0, 0, 256, 10, 160);
++	DrawHalfTransparentRectTo(ui, 0, 5, 256, 10);
++	DrawHalfTransparentRectTo(ui, 0, 20, 256, 10, 250);
++
++	uint32_t lut[256];
++	BuildPaletteLut32(system_palette.data(), lut);
++	std::vector<uint32_t> pixels(static_cast<size_t>(UiSize.width) * UiSize.height);
++	ExpandUiKeyed(static_cast<const uint8_t *>(PalSurface->pixels), GetUiKeyedTarget().HalfAt(ui.at(0, 0)), PalSurface->pitch,
++	    pixels.data(), static_cast<int>(UiSize.width * sizeof(uint32_t)), UiSize.width, UiSize.height, lut);
++
++	const auto rgb = [](const SDL_Color &c) { return (static_cast<uint32_t>(c.r) << 16) | (static_cast<uint32_t>(c.g) << 8) | c.b; };
++	const auto at = [&](int x, int y) { return pixels[static_cast<size_t>(y) * UiSize.width + x]; };
++	EXPECT_EQ(at(17, 2), rgb(system_palette[160]) | 0xFF000000);
++	EXPECT_EQ(at(17, 7), rgb(system_palette[Remap(paletteTransparencyLookup[0][160])]) | 0xFF000000);
++	EXPECT_EQ(at(17, 12), rgb(system_palette[0]) | 0x80000000);
++	EXPECT_EQ(at(17, 25), rgb(system_palette[250]) | 0x80000000);
++	EXPECT_EQ(at(17, 40), 0U);
++	for (const uint32_t pixel : pixels) {
++		const uint32_t alpha = pixel >> 24;
++		ASSERT_TRUE(alpha == 0 || alpha == 0x80 || alpha == 0xFF);
++		if (alpha == 0) {
++			ASSERT_EQ(pixel, 0U);
++		}
++	}
++}
++
++#endif // DVL_LAYERED_RENDERER
++
++} // namespace
++} // namespace devilution
+diff --git a/test/world_picking_test.cpp b/test/world_picking_test.cpp
+new file mode 100644
+index 0000000..2582eee
+--- /dev/null
++++ b/test/world_picking_test.cpp
+@@ -0,0 +1,531 @@
++/**
++ * @file world_picking_test.cpp
++ *
++ * Mouse picking of the layered renderer ("Independent Zoom"): WorldPointToTile() must be the exact inverse of
++ * the tile layout the renderer uses (GetScreenPosition()), at every world zoom level.
++ */
++#include <algorithm>
++#include <cmath>
++#include <cstdint>
++#include <cstdlib>
++#include <random>
++#include <string>
++#include <vector>
++
++#include <gtest/gtest.h>
++
++#include "control/control.hpp"
++#include "cursor.h"
++#include "diablo.h"
++#include "engine/direction.hpp"
++#include "engine/displacement.hpp"
++#include "engine/point.hpp"
++#include "engine/render/scrollrt.h"
++#include "engine/render/world_view.hpp"
++#include "engine/size.hpp"
++#include "inv.h"
++#include "levels/dun_tile_data.hpp"
++#include "levels/gendung.h"
++#include "nthread.h"
++#include "options.h"
++#include "player.h"
++#include "utils/ui_fwd.h"
++
++namespace devilution {
++namespace {
++
++constexpr Size Output5K { 5760, 3240 };
++constexpr Point ViewCentre { 56, 56 };
++/** @brief Offset from GetScreenPosition() to the diamond centre used by M1-T2 (the upper of the two centre pixels). */
++constexpr Displacement DiamondCentre { TILE_WIDTH / 2, -TILE_HEIGHT / 2 };
++
++struct Pose {
++	bool walking;
++	Direction direction;
++	int8_t frame;
++	uint8_t progressToNextGameTick;
++};
++
++std::string Describe(const Pose &pose)
++{
++	if (!pose.walking)
++		return "standing";
++	return "walking dir=" + std::to_string(static_cast<int>(pose.direction)) + " frame=" + std::to_string(pose.frame)
++	    + " progress=" + std::to_string(pose.progressToNextGameTick);
++}
++
++PLR_MODE WalkMode(Direction direction)
++{
++	switch (direction) {
++	case Direction::NorthWest:
++	case Direction::North:
++	case Direction::NorthEast:
++		return PM_WALK_NORTHWARDS;
++	case Direction::West:
++	case Direction::East:
++		return PM_WALK_SIDEWAYS;
++	default:
++		return PM_WALK_SOUTHWARDS;
++	}
++}
++
++/** @brief Standing, and walking in all 8 directions at several animation frames. */
++std::vector<Pose> AllPoses()
++{
++	std::vector<Pose> poses;
++	poses.push_back({ false, Direction::South, 0, 0 });
++	for (int dir = 0; dir < 8; dir++) {
++		for (const int8_t frame : { 0, 3, 7 })
++			poses.push_back({ true, static_cast<Direction>(dir), frame, 0 });
++		poses.push_back({ true, static_cast<Direction>(dir), 5, 100 });
++	}
++	return poses;
++}
++
++void ApplyPose(const Pose &pose)
++{
++	Player &player = *MyPlayer;
++	player._pdir = pose.direction;
++	player.AnimInfo = {};
++	ProgressToNextGameTick = pose.progressToNextGameTick;
++	if (!pose.walking) {
++		player._pmode = PM_STAND;
++		return;
++	}
++	player._pmode = WalkMode(pose.direction);
++	player.AnimInfo.numberOfFrames = 8;
++	player.AnimInfo.ticksPerFrame = 1;
++	player.AnimInfo.currentFrame = pose.frame;
++	player.AnimInfo.tickCounterOfCurrentFrame = 0;
++}
++
++/** @brief The mouse offset WorldPointToTile() subtracts while walking. */
++Displacement Prediction()
++{
++	return MyPlayer->isWalking() ? WalkingInputPrediction(*MyPlayer) : Displacement { 0, 0 };
++}
++
++bool Contains(Size size, Point p)
++{
++	return p.x >= 0 && p.y >= 0 && p.x < size.width && p.y < size.height;
++}
++
++/**
++ * @brief Distance of the centre of pixel `p` from the centre of the diamond of `tile`, normalised so that the
++ * diamond's edge is at 1. The diamond covers columns [S.x, S.x + 64) and rows [S.y - 31, S.y], S = GetScreenPosition(tile).
++ */
++double DiamondDistance(Point tile, Point p)
++{
++	const Point bottomLeft = GetScreenPosition(tile);
++	const double dx = (p.x + 0.5) - (bottomLeft.x + TILE_WIDTH / 2.0);
++	const double dy = (p.y + 0.5) - (bottomLeft.y - (TILE_HEIGHT / 2.0 - 1));
++	return std::abs(dx) / (TILE_WIDTH / 2.0) + std::abs(dy) / (TILE_HEIGHT / 2.0);
++}
++
++bool IsNeighbour(Point a, Point b)
++{
++	return std::abs(a.x - b.x) <= 1 && std::abs(a.y - b.y) <= 1;
++}
++
++class WorldPickingTest : public ::testing::Test {
++protected:
++	void SetUp() override
++	{
++		Players.resize(1);
++		MyPlayerId = 0;
++		MyPlayer = &Players[MyPlayerId];
++		*MyPlayer = {};
++		MyPlayer->position.tile = ViewCentre;
++		ViewPosition = ViewCentre;
++		leveltype = DTYPE_TOWN;
++		ProgressToNextGameTick = 0;
++		GetOptions().Graphics.zoom.SetValue(false);
++		ApplyPose({ false, Direction::South, 0, 0 });
++	}
++
++	void TearDown() override
++	{
++		invflag = false;
++		ProgressToNextGameTick = 0;
++		UseLegacyView();
++	}
++
++	static void SetUiSize(Size ui)
++	{
++		gnScreenWidth = ui.width;
++		gnScreenHeight = ui.height;
++		CalculatePanelAreas();
++	}
++
++	static WorldView UseLayeredView(Size output, Size ui, bool integerScale, int ws)
++	{
++		SetUiSize(ui);
++		const WorldView view = ComputeWorldView(output, ui, ComputeUiPlacement(output, ui, integerScale), ws, GetMainPanel().size.height);
++		SetWorldViewForTesting(view);
++		CalcViewportGeometry();
++		return view;
++	}
++
++	static void UseLegacyView()
++	{
++		SetWorldViewForTesting(ComputeLegacyWorldView({ gnScreenWidth, gnScreenHeight }, GetMainPanel().size.height));
++		CalcViewportGeometry();
++	}
++
++	/** @brief Tiles whose diamond centre C(t) = GetScreenPosition(t) + (32, -16) lies inside the world surface. */
++	static std::vector<Point> VisibleTiles(const WorldView &view)
++	{
++		std::vector<Point> tiles;
++		for (int x = 0; x < MAXDUNX; x++) {
++			for (int y = 0; y < MAXDUNY; y++) {
++				if (Contains(view.size, GetScreenPosition({ x, y }) + DiamondCentre))
++					tiles.push_back({ x, y });
++			}
++		}
++		return tiles;
++	}
++};
++
++struct UiCase {
++	Size ui;
++	bool integerScale;
++};
++
++const UiCase UiCases[] = {
++	{ { 960, 540 }, true },   // s_u = 6
++	{ { 853, 480 }, true },   // s_u = 6, side bars
++	{ { 853, 480 }, false },  // s_u = 6.75
++	{ { 3840, 2160 }, false } // s_u = 1.5
++};
++
++TEST_F(WorldPickingTest, LadderIsTheExpected5KLadder)
++{
++	const std::vector<int> ladder = ComputeZoomLadder(Output5K.height, 240, 1620);
++	EXPECT_EQ(ladder, (std::vector<int> { 2, 3, 4, 5, 6, 8, 10, 12 }));
++}
++
++TEST_F(WorldPickingTest, TileCentresMapToTheirTile)
++{
++	for (const int ws : ComputeZoomLadder(Output5K.height, 240, 1620)) {
++		for (const UiCase &uiCase : UiCases) {
++			const WorldView view = UseLayeredView(Output5K, uiCase.ui, uiCase.integerScale, ws);
++			for (const Pose &pose : AllPoses()) {
++				ApplyPose(pose);
++				SCOPED_TRACE(testing::Message() << "ws=" << ws << " U=" << uiCase.ui.width << "x" << uiCase.ui.height
++				                                << " integer=" << uiCase.integerScale << " " << Describe(pose));
++				const Displacement prediction = Prediction();
++				const std::vector<Point> tiles = VisibleTiles(view);
++				// The world surface is covered by about W.w * W.h / (32 * 32) diamonds
++				ASSERT_GE(static_cast<int>(tiles.size()), view.size.width * view.size.height / (TILE_WIDTH * TILE_HEIGHT / 2) * 9 / 10);
++				int failures = 0;
++				for (const Point tile : tiles) {
++					const Point centre = GetScreenPosition(tile) + DiamondCentre + prediction;
++					bool flipflag = false;
++					if (WorldPointToTile(centre, flipflag) != tile)
++						failures++;
++					// The other centre pixel
++					if (WorldPointToTile(centre + Displacement { 0, 1 }, flipflag) != tile)
++						failures++;
++				}
++				EXPECT_EQ(failures, 0);
++			}
++		}
++	}
++}
++
++TEST_F(WorldPickingTest, RandomPixelsLieInTheReturnedDiamond)
++{
++	std::mt19937 rng(1234);
++	double worst = 0;
++	for (const int ws : ComputeZoomLadder(Output5K.height, 240, 1620)) {
++		const WorldView view = UseLayeredView(Output5K, { 960, 540 }, true, ws);
++		std::uniform_int_distribution<int> randomX(0, view.size.width - 1);
++		std::uniform_int_distribution<int> randomY(0, view.size.height - 1);
++		for (const Pose &pose : AllPoses()) {
++			ApplyPose(pose);
++			SCOPED_TRACE(testing::Message() << "ws=" << ws << " " << Describe(pose));
++			const Displacement prediction = Prediction();
++			const int samples = pose.walking ? 2000 : 20000;
++			int failures = 0;
++			for (int i = 0; i < samples; i++) {
++				const Point pixel { randomX(rng), randomY(rng) };
++				bool flipflag = false;
++				const Point tile = WorldPointToTile(pixel, flipflag);
++				// Edge pixels may go to either neighbour: allow 1/16 for the integer diagonals of the cell split
++				const double distance = DiamondDistance(tile, pixel - prediction);
++				worst = std::max(worst, distance);
++				if (distance > 1 + 1.0 / 16)
++					failures++;
++			}
++			EXPECT_EQ(failures, 0);
++		}
++	}
++	EXPECT_GT(worst, 0.9);
++}
++
++TEST_F(WorldPickingTest, FlipflagMatchesTheHalfOfTheDiamond)
++{
++	const WorldView view = UseLayeredView(Output5K, { 960, 540 }, true, 3);
++	std::mt19937 rng(99);
++	std::uniform_int_distribution<int> randomX(0, view.size.width - 1);
++	std::uniform_int_distribution<int> randomY(0, view.size.height - 1);
++	int failures = 0;
++	for (int i = 0; i < 20000; i++) {
++		const Point pixel { randomX(rng), randomY(rng) };
++		bool flipflag = false;
++		const Point tile = WorldPointToTile(pixel, flipflag);
++		const int centreX = GetScreenPosition(tile).x + TILE_WIDTH / 2;
++		// flipflag is set in the left half of the diamond (TrySelect* then look at the tile to the south-west)
++		if (flipflag != (pixel.x < centreX))
++			failures++;
++	}
++	EXPECT_EQ(failures, 0);
++}
++
++TEST_F(WorldPickingTest, PickingThroughTheUi)
++{
++	for (const int ws : ComputeZoomLadder(Output5K.height, 240, 1620)) {
++		for (const UiCase &uiCase : UiCases) {
++			const WorldView view = UseLayeredView(Output5K, uiCase.ui, uiCase.integerScale, ws);
++			for (const Pose &pose : AllPoses()) {
++				ApplyPose(pose);
++				SCOPED_TRACE(testing::Message() << "ws=" << ws << " U=" << uiCase.ui.width << "x" << uiCase.ui.height
++				                                << " integer=" << uiCase.integerScale << " " << Describe(pose));
++				const Displacement prediction = Prediction();
++				int total = 0;
++				int exact = 0;
++				int notNeighbour = 0;
++				for (const Point tile : VisibleTiles(view)) {
++					const Point uiPoint = WorldToUi(view, GetScreenPosition(tile) + DiamondCentre + prediction);
++					if (!Contains(view.uiSize, uiPoint))
++						continue;
++					bool flipflag = false;
++					const Point picked = WorldPointToTile(UiToWorld(view, uiPoint), flipflag);
++					total++;
++					if (picked == tile)
++						exact++;
++					else if (!IsNeighbour(picked, tile))
++						notNeighbour++;
++				}
++				ASSERT_GT(total, 0);
++				EXPECT_EQ(notNeighbour, 0);
++				if (ws >= 3) {
++					EXPECT_GE(exact * 100, total * 99) << exact << " of " << total;
++				}
++			}
++		}
++	}
++}
++
++TEST_F(WorldPickingTest, HeroStaysAnchoredAboveThePanel)
++{
++	for (const int ws : ComputeZoomLadder(Output5K.height, 240, 1620)) {
++		for (const UiCase &uiCase : UiCases) {
++			const WorldView view = UseLayeredView(Output5K, uiCase.ui, uiCase.integerScale, ws);
++			SCOPED_TRACE(testing::Message() << "ws=" << ws << " U=" << uiCase.ui.width << "x" << uiCase.ui.height
++			                                << " integer=" << uiCase.integerScale);
++			const Point heroBottomLeft = GetScreenPosition(ViewPosition);
++			// The middle of the hero's diamond is exactly the anchor
++			const Displacement heroCentre { TILE_WIDTH / 2, -(TILE_HEIGHT / 2 - 1) };
++			EXPECT_EQ(heroBottomLeft + heroCentre, view.anchor);
++
++			const Point uiAnchor { uiCase.ui.width / 2, (uiCase.ui.height - GetMainPanel().size.height) / 2 };
++			const double worldPixelInUi = ws / view.uiScale;
++			// Continuous position of the middle of the hero's diamond in UI pixels, against the centre of uiAnchor:
++			// within one UI pixel, or within one world pixel when world pixels are bigger (the hero moves in whole world pixels)
++			const double tolerance = std::max(1.0, worldPixelInUi);
++			const double heroX = (view.originPx.x + view.anchor.x * ws - view.uiOriginPx.x) / view.uiScale;
++			const double heroY = (view.originPx.y + view.anchor.y * ws - view.uiOriginPx.y) / view.uiScale;
++			EXPECT_LE(std::abs(heroX - (uiAnchor.x + 0.5)), tolerance);
++			EXPECT_LE(std::abs(heroY - (uiAnchor.y + 0.5)), tolerance);
++
++			// M1-T2: the diamond centre pixel C = S + (32, -16) is within 1 UI pixel of the anchor whenever a world pixel is
++			// not bigger than a UI pixel
++			const Point heroCentreUi = WorldToUi(view, heroBottomLeft + DiamondCentre);
++			if (worldPixelInUi <= 1) {
++				EXPECT_LE(std::abs(heroCentreUi.x - uiAnchor.x), 1);
++				EXPECT_LE(std::abs(heroCentreUi.y - uiAnchor.y), 1);
++			} else {
++				const int coarse = static_cast<int>(std::ceil(1.5 * worldPixelInUi));
++				EXPECT_LE(std::abs(heroCentreUi.x - uiAnchor.x), coarse);
++				EXPECT_LE(std::abs(heroCentreUi.y - uiAnchor.y), coarse);
++			}
++		}
++	}
++}
++
++TEST_F(WorldPickingTest, CheckCursMoveUsesTheLayeredPicking)
++{
++	for (const int ws : { 2, 3, 6, 12 }) {
++		const WorldView view = UseLayeredView(Output5K, { 960, 540 }, true, ws);
++		for (const Pose &pose : { Pose { false, Direction::South, 0, 0 }, Pose { true, Direction::NorthEast, 3, 0 } }) {
++			ApplyPose(pose);
++			SCOPED_TRACE(testing::Message() << "ws=" << ws << " " << Describe(pose));
++			int failures = 0;
++			int checked = 0;
++			for (int y = 0; y < view.uiSize.height; y += 3) {
++				for (int x = 0; x < view.uiSize.width; x += 5) {
++					MousePosition = { x, y };
++					if (GetMainPanel().contains(MousePosition))
++						continue;
++					bool flipflag = false;
++					const Point expected = WorldPointToTile(UiToWorld(view, MousePosition), flipflag);
++					cursPosition = { -1, -1 };
++					CheckCursMove();
++					checked++;
++					if (cursPosition != expected)
++						failures++;
++				}
++			}
++			EXPECT_GT(checked, 10000);
++			EXPECT_EQ(failures, 0);
++		}
++	}
++}
++
++/**
++ * With a 1:1 view (W = U, one output pixel per UI and world pixel) the layered geometry and picking must agree
++ * with the legacy renderer, for UI sizes whose legacy picking is exact (at 960x540 the legacy chain picks a
++ * neighbouring tile for a few percent of the pixels).
++ */
++TEST_F(WorldPickingTest, IdentityViewMatchesLegacy)
++{
++	for (const Size ui : { Size { 1920, 1080 }, Size { 1280, 720 } }) {
++		for (const Pose &pose : AllPoses()) {
++			SCOPED_TRACE(testing::Message() << "U=" << ui.width << "x" << ui.height << " " << Describe(pose));
++			ApplyPose(pose);
++			SetUiSize(ui);
++
++			UseLegacyView();
++			int legacyColumns;
++			int legacyRows;
++			TilesInView(&legacyColumns, &legacyRows);
++			int legacyOffsetX;
++			int legacyOffsetY;
++			CalcTileOffset(&legacyOffsetX, &legacyOffsetY);
++			const int legacyCoveredRows = RowsCoveredByPanel();
++			std::vector<Point> legacyPositions;
++			for (int x = 0; x < MAXDUNX; x++) {
++				for (int y = 0; y < MAXDUNY; y++)
++					legacyPositions.push_back(GetScreenPosition({ x, y }));
++			}
++			std::mt19937 rng(7);
++			std::uniform_int_distribution<int> randomX(0, ui.width - 1);
++			std::uniform_int_distribution<int> randomY(0, ui.height - 1);
++			std::vector<Point> mousePositions;
++			// Every pixel of a few tiles around the hero and in the top-left corner, and random pixels elsewhere
++			for (int y = ui.height / 2 - 160; y < ui.height / 2 - 32; y++) {
++				for (int x = ui.width / 2 - 128; x < ui.width / 2 + 128; x++)
++					mousePositions.push_back({ x, y });
++			}
++			for (int y = 0; y < 2 * TILE_HEIGHT; y++) {
++				for (int x = 0; x < 2 * TILE_WIDTH; x++)
++					mousePositions.push_back({ x, y });
++			}
++			for (int i = 0; i < 5000; i++)
++				mousePositions.push_back({ randomX(rng), randomY(rng) });
++			std::erase_if(mousePositions, [](Point p) { return GetMainPanel().contains(p); });
++			std::vector<Point> legacyTiles;
++			for (const Point mouse : mousePositions) {
++				MousePosition = mouse;
++				CheckCursMove();
++				legacyTiles.push_back(cursPosition);
++			}
++
++			const WorldView view = UseLayeredView(ui, ui, true, 1);
++			ASSERT_EQ(view.size, ui);
++			int columns;
++			int rows;
++			TilesInView(&columns, &rows);
++			EXPECT_EQ(columns, legacyColumns);
++			EXPECT_EQ(rows, legacyRows);
++			int offsetX;
++			int offsetY;
++			CalcTileOffset(&offsetX, &offsetY);
++			EXPECT_EQ(offsetX, legacyOffsetX);
++			EXPECT_EQ(offsetY, legacyOffsetY);
++			EXPECT_EQ(RowsCoveredByPanel(), legacyCoveredRows);
++			int positionMismatches = 0;
++			size_t i = 0;
++			for (int x = 0; x < MAXDUNX; x++) {
++				for (int y = 0; y < MAXDUNY; y++) {
++					if (GetScreenPosition({ x, y }) != legacyPositions[i++])
++						positionMismatches++;
++				}
++			}
++			EXPECT_EQ(positionMismatches, 0);
++			int pickMismatches = 0;
++			for (size_t j = 0; j < mousePositions.size(); j++) {
++				MousePosition = mousePositions[j];
++				CheckCursMove();
++				if (cursPosition == legacyTiles[j])
++					continue;
++				// While walking, the legacy chain truncates negative intermediate coordinates near the left and top edges
++				// and may pick a tile whose diamond does not contain the pixel. The layered pick must still contain it.
++				const Point pixel = mousePositions[j];
++				const bool nearTopLeftEdge = pixel.x < TILE_WIDTH || pixel.y < TILE_HEIGHT;
++				if (!pose.walking || !nearTopLeftEdge || DiamondDistance(cursPosition, pixel - Prediction()) > 1 + 1.0 / 16)
++					pickMismatches++;
++			}
++			EXPECT_EQ(pickMismatches, 0) << "of " << mousePositions.size();
++		}
++	}
++}
++
++TEST_F(WorldPickingTest, LayeredGeometryUsesTheWorldSurface)
++{
++	const WorldView view = UseLayeredView(Output5K, { 960, 540 }, true, 3);
++	ASSERT_EQ(view.size, (Size { 1920, 1080 }));
++	ASSERT_EQ(view.anchor, (Point { 961, 413 }));
++	int columns;
++	int rows;
++	TilesInView(&columns, &rows);
++	EXPECT_EQ(columns, 30);
++	EXPECT_EQ(rows, 34);
++	int offsetX;
++	int offsetY;
++	CalcTileOffset(&offsetX, &offsetY);
++	EXPECT_EQ(offsetX, 0);
++	EXPECT_EQ(offsetY, 4);
++	// (1080 - 2 * 413) / 32: the panel (128 UI px = 256 world px) covers about 8 rows below the hero's area
++	EXPECT_EQ(RowsCoveredByPanel(), 7);
++}
++
++TEST_F(WorldPickingTest, PanelsDoNotShiftTheLayeredWorld)
++{
++	// Panels cover the view at 640x480; the legacy renderer shifts the world, the layered one does not (M5)
++	const Size ui { 640, 480 };
++	SetUiSize(ui);
++	ASSERT_TRUE(CanPanelsCoverView());
++
++	UseLegacyView();
++	const Point legacyClosed = GetScreenPosition(ViewPosition);
++	invflag = true;
++	const Point legacyOpen = GetScreenPosition(ViewPosition);
++	EXPECT_NE(legacyOpen, legacyClosed);
++	invflag = false;
++
++	const WorldView view = UseLayeredView({ 1920, 1080 }, ui, true, 2);
++	const Point closed = GetScreenPosition(ViewPosition);
++	invflag = true;
++	EXPECT_EQ(GetScreenPosition(ViewPosition), closed);
++	bool flipflag = false;
++	EXPECT_EQ(WorldPointToTile(view.anchor, flipflag), ViewPosition);
++	invflag = false;
++}
++
++TEST_F(WorldPickingTest, WalkingInputPredictionIsSmall)
++{
++	for (const Pose &pose : AllPoses()) {
++		if (!pose.walking)
++			continue;
++		ApplyPose(pose);
++		SCOPED_TRACE(Describe(pose));
++		const Displacement prediction = WalkingInputPrediction(*MyPlayer);
++		EXPECT_LE(std::abs(prediction.deltaX), 8);
++		EXPECT_LE(std::abs(prediction.deltaY), 4);
++	}
++}
++
++} // namespace
++} // namespace devilution
+diff --git a/test/world_view_test.cpp b/test/world_view_test.cpp
+new file mode 100644
+index 0000000..a151c5d
+--- /dev/null
++++ b/test/world_view_test.cpp
+@@ -0,0 +1,410 @@
++#include <algorithm>
++#include <cmath>
++#include <cstdlib>
++#include <random>
++#include <vector>
++
++#include <gmock/gmock.h>
++#include <gtest/gtest.h>
++
++#include "engine/demomode.h"
++#include "engine/point.hpp"
++#include "engine/render/world_view.hpp"
++#include "engine/size.hpp"
++#include "options.h"
++
++namespace devilution {
++namespace {
++
++using ::testing::ElementsAre;
++
++constexpr int MainPanelHeight = 128;
++
++const Size Outputs[] = { { 5760, 3240 }, { 5120, 2880 }, { 1920, 1080 } };
++const Size UiSizes[] = { { 960, 540 }, { 853, 480 }, { 3840, 2160 } };
++
++int CeilRatio(double a, double b)
++{
++	return static_cast<int>(std::ceil(a / b));
++}
++
++TEST(WorldViewTest, FloorDivAndPosMod)
++{
++	EXPECT_EQ(FloorDiv(7, 64), 0);
++	EXPECT_EQ(FloorDiv(64, 64), 1);
++	EXPECT_EQ(FloorDiv(-1, 64), -1);
++	EXPECT_EQ(FloorDiv(-64, 64), -1);
++	EXPECT_EQ(FloorDiv(-65, 64), -2);
++	EXPECT_EQ(PosMod(7, 64), 7);
++	EXPECT_EQ(PosMod(-1, 64), 63);
++	EXPECT_EQ(PosMod(-64, 64), 0);
++	EXPECT_EQ(PosMod(-65, 32), 31);
++}
++
++TEST(WorldViewTest, ZoomLadder)
++{
++	EXPECT_THAT(ComputeZoomLadder(3240, 240, 1620), ElementsAre(2, 3, 4, 5, 6, 8, 10, 12));
++	EXPECT_THAT(ComputeZoomLadder(2880, 240, 1620), ElementsAre(2, 3, 4, 5, 6, 8, 10, 12));
++	EXPECT_THAT(ComputeZoomLadder(1080, 240, 1620), ElementsAre(1, 2, 3, 4));
++	EXPECT_THAT(ComputeZoomLadder(1440, 240, 1620), ElementsAre(1, 2, 3, 4, 5, 6));
++	// The limits filter the ladder.
++	EXPECT_THAT(ComputeZoomLadder(3240, 540, 1080), ElementsAre(3, 4, 5, 6));
++	EXPECT_THAT(ComputeZoomLadder(3240, 180, 3240), ElementsAre(1, 2, 3, 4, 5, 6, 8, 10, 12, 16));
++	// Empty ladders fall back to about 540 world pixels.
++	EXPECT_THAT(ComputeZoomLadder(3240, 1080, 720), ElementsAre(6));
++	EXPECT_THAT(ComputeZoomLadder(200, 240, 1620), ElementsAre(1));
++	EXPECT_THAT(ComputeZoomLadder(0, 240, 1620), ElementsAre(1));
++}
++
++TEST(WorldViewTest, AutoWorldZoom)
++{
++	EXPECT_EQ(AutoWorldZoom(ComputeZoomLadder(3240, 240, 1620), 3240), 6);
++	EXPECT_EQ(AutoWorldZoom(ComputeZoomLadder(2880, 240, 1620), 2880), 5);
++	EXPECT_EQ(AutoWorldZoom(ComputeZoomLadder(1440, 240, 1620), 1440), 3);
++	EXPECT_EQ(AutoWorldZoom(ComputeZoomLadder(1080, 240, 1620), 1080), 2);
++	// Nearest entry when the ideal factor is not on the ladder.
++	EXPECT_EQ(AutoWorldZoom(ComputeZoomLadder(3240, 540, 1080), 3240), 6);
++	EXPECT_EQ(AutoWorldZoom(ComputeZoomLadder(3240, 1080, 1620), 3240), 3);
++}
++
++TEST(WorldViewTest, SnapAndStep)
++{
++	const std::vector<int> ladder = ComputeZoomLadder(3240, 240, 1620); // 2 3 4 5 6 8 10 12
++	EXPECT_EQ(SnapToZoomLadder(ladder, 6), 6);
++	EXPECT_EQ(SnapToZoomLadder(ladder, 7), 6);   // tie goes down
++	EXPECT_EQ(SnapToZoomLadder(ladder, 9), 8);   // tie goes down
++	EXPECT_EQ(SnapToZoomLadder(ladder, 11), 10); // tie goes down
++	EXPECT_EQ(SnapToZoomLadder(ladder, 1), 2);
++	EXPECT_EQ(SnapToZoomLadder(ladder, 16), 12);
++
++	EXPECT_EQ(StepZoomLadder(ladder, 6, 1), 8);
++	EXPECT_EQ(StepZoomLadder(ladder, 6, -1), 5);
++	EXPECT_EQ(StepZoomLadder(ladder, 12, 1), 12);
++	EXPECT_EQ(StepZoomLadder(ladder, 2, -1), 2);
++	EXPECT_EQ(StepZoomLadder(ladder, 7, 1), 8); // stale: snapped to 6 first
++	EXPECT_EQ(StepZoomLadder(ladder, 7, -1), 5);
++	EXPECT_EQ(StepZoomLadder(ladder, 1, -1), 2);
++	EXPECT_EQ(StepZoomLadder(ladder, 1, 1), 3);
++
++	EXPECT_EQ(ResolveWorldZoom(ladder, 0, 3240), 6);
++	EXPECT_EQ(ResolveWorldZoom(ladder, 10, 3240), 10);
++	EXPECT_EQ(ResolveWorldZoom(ladder, 7, 3240), 6);
++	EXPECT_EQ(ResolveWorldZoom(ladder, 1, 3240), 2);
++	EXPECT_EQ(ResolveWorldZoom(ladder, 16, 3240), 12);
++
++	// The zoom toggle goes to the ladder entry nearest to twice the current zoom.
++	EXPECT_EQ(SnapToZoomLadder(ladder, 2 * 3), 6);
++	EXPECT_EQ(SnapToZoomLadder(ladder, 2 * 5), 10);
++	EXPECT_EQ(SnapToZoomLadder(ladder, 2 * 8), 12);
++}
++
++TEST(WorldViewTest, AutoUiScale)
++{
++	EXPECT_EQ(AutoUiScale({ 5760, 3240 }), 6);
++	EXPECT_EQ(AutoUiScale({ 5120, 2880 }), 6);
++	EXPECT_EQ(AutoUiScale({ 3840, 2160 }), 4);
++	EXPECT_EQ(AutoUiScale({ 2560, 1440 }), 3);
++	EXPECT_EQ(AutoUiScale({ 1920, 1080 }), 2);
++	EXPECT_EQ(AutoUiScale({ 1280, 1024 }), 1); // 1280 / 2 = 640 is too narrow
++	EXPECT_EQ(AutoUiScale({ 640, 480 }), 1);
++	EXPECT_EQ(AutoUiScale({ 320, 240 }), 1);
++}
++
++struct PlacementCase {
++	Size output;
++	Size ui;
++	bool integerScale;
++	float scale;
++	Point origin;
++	Size viewport;
++};
++
++TEST(WorldViewTest, UiPlacementMatchesSdl2UpdateLogicalSize)
++{
++	// Expected values follow SDL2 2.30 / 2.32 UpdateLogicalSize (letterbox mode), computed in float.
++	const PlacementCase cases[] = {
++		// Integer scaling
++		{ { 5760, 3240 }, { 960, 540 }, true, 6.0F, { 0, 0 }, { 5760, 3240 } },
++		{ { 5760, 3240 }, { 3840, 2160 }, true, 1.0F, { 960, 540 }, { 3840, 2160 } },
++		{ { 5120, 2880 }, { 960, 540 }, true, 5.0F, { 160, 90 }, { 4800, 2700 } },
++		{ { 5760, 3240 }, { 853, 480 }, true, 6.0F, { 321, 180 }, { 5118, 2880 } },
++		{ { 5120, 2880 }, { 853, 480 }, true, 6.0F, { 1, 0 }, { 5118, 2880 } },
++		{ { 1920, 1080 }, { 853, 480 }, true, 2.0F, { 107, 60 }, { 1706, 960 } },
++		{ { 1920, 1080 }, { 3840, 2160 }, true, 1.0F, { -960, -540 }, { 3840, 2160 } },
++		{ { 1600, 1200 }, { 1920, 1080 }, true, 1.0F, { -160, 60 }, { 1920, 1080 } },
++		{ { 1920, 1080 }, { 1280, 1024 }, true, 1.0F, { 320, 28 }, { 1280, 1024 } },
++		{ { 2560, 1600 }, { 960, 540 }, true, 2.0F, { 320, 260 }, { 1920, 1080 } },
++		{ { 5120, 2880 }, { 3840, 2160 }, true, 1.0F, { 640, 360 }, { 3840, 2160 } },
++		// Same aspect ratio: the viewport is the whole output
++		{ { 5760, 3240 }, { 3840, 2160 }, false, 1.5F, { 0, 0 }, { 5760, 3240 } },
++		{ { 5760, 3240 }, { 960, 540 }, false, 6.0F, { 0, 0 }, { 5760, 3240 } },
++		{ { 5120, 2880 }, { 960, 540 }, false, 5120.0F / 960.0F, { 0, 0 }, { 5120, 2880 } },
++		{ { 1920, 1080 }, { 3840, 2160 }, false, 0.5F, { 0, 0 }, { 1920, 1080 } },
++		// UI narrower than the output: side bars
++		{ { 5760, 3240 }, { 853, 480 }, false, 6.75F, { 1, 0 }, { 5757, 3240 } },
++		{ { 5120, 2880 }, { 853, 480 }, false, 6.0F, { 1, 0 }, { 5118, 2880 } },
++		{ { 1920, 1080 }, { 853, 480 }, false, 2.25F, { 0, 0 }, { 1919, 1080 } },
++		{ { 1920, 1080 }, { 1280, 1024 }, false, 1.0546875F, { 285, 0 }, { 1350, 1080 } },
++		{ { 1920, 1200 }, { 640, 480 }, false, 2.5F, { 160, 0 }, { 1600, 1200 } },
++		// UI wider than the output: letterbox
++		{ { 1600, 1200 }, { 1920, 1080 }, false, 1600.0F / 1920.0F, { 0, 150 }, { 1600, 900 } },
++		{ { 2560, 1600 }, { 960, 540 }, false, 2560.0F / 960.0F, { 0, 80 }, { 2560, 1440 } },
++	};
++	for (const PlacementCase &c : cases) {
++		SCOPED_TRACE(testing::Message() << "O=" << c.output.width << "x" << c.output.height
++		                                << " U=" << c.ui.width << "x" << c.ui.height << " integer=" << c.integerScale);
++		const UiPlacement placement = ComputeUiPlacement(c.output, c.ui, c.integerScale);
++		EXPECT_EQ(placement.scale, c.scale);
++		EXPECT_EQ(placement.origin, c.origin);
++		EXPECT_EQ(placement.viewportSize, c.viewport);
++	}
++}
++
++TEST(WorldViewTest, WorldSizeAndOrigin)
++{
++	const Size output { 5760, 3240 };
++	const UiPlacement placement = ComputeUiPlacement(output, { 960, 540 }, true);
++
++	const WorldView ws3 = ComputeWorldView(output, { 960, 540 }, placement, 3, MainPanelHeight);
++	EXPECT_TRUE(ws3.layered);
++	EXPECT_EQ(ws3.ws, 3);
++	EXPECT_EQ(ws3.size, Size(1920, 1080));
++	EXPECT_EQ(ws3.originPx, Point(0, 0));
++	EXPECT_EQ(ws3.outputSize, output);
++	EXPECT_EQ(ws3.uiSize, Size(960, 540));
++	EXPECT_EQ(ws3.uiScale, 6.0F);
++	EXPECT_EQ(ws3.uiOriginPx, Point(0, 0));
++
++	EXPECT_EQ(ComputeWorldView(output, { 960, 540 }, placement, 6, MainPanelHeight).size, Size(960, 540));
++	EXPECT_EQ(ComputeWorldView(output, { 960, 540 }, placement, 12, MainPanelHeight).size, Size(480, 270));
++
++	// Hypothetical ws = 7 on 5120x2880: the world covers the output, the cropped overscan is at most ws - 1.
++	const WorldView ws7 = ComputeWorldView({ 5120, 2880 }, { 960, 540 }, ComputeUiPlacement({ 5120, 2880 }, { 960, 540 }, true), 7, MainPanelHeight);
++	EXPECT_EQ(ws7.size, Size(732, 412));
++	EXPECT_EQ(ws7.originPx, Point(-2, -2));
++
++	for (const Size o : { Size(5760, 3240), Size(5120, 2880), Size(1920, 1080), Size(2560, 1440), Size(1366, 768), Size(1001, 777) }) {
++		for (int ws = 1; ws <= 16; ws++) {
++			const WorldView view = ComputeWorldView(o, { 960, 540 }, ComputeUiPlacement(o, { 960, 540 }, false), ws, MainPanelHeight);
++			const int cropX = view.size.width * ws - o.width;
++			const int cropY = view.size.height * ws - o.height;
++			EXPECT_GE(cropX, 0);
++			EXPECT_LE(cropX, ws - 1);
++			EXPECT_GE(cropY, 0);
++			EXPECT_LE(cropY, ws - 1);
++			EXPECT_LE(view.originPx.x, 0);
++			EXPECT_LE(view.originPx.y, 0);
++			EXPECT_GE(view.originPx.x + view.size.width * ws, o.width);
++			EXPECT_GE(view.originPx.y + view.size.height * ws, o.height);
++			EXPECT_EQ(view.originPx.x, -(cropX / 2));
++			EXPECT_EQ(view.originPx.y, -(cropY / 2));
++		}
++	}
++}
++
++TEST(WorldViewTest, ConversionsFollowOutputPixels)
++{
++	// A UI pixel maps to the world pixel that covers the output position of its centre, and vice versa.
++	std::mt19937 rng(4242);
++	for (const Size o : Outputs) {
++		for (const Size u : UiSizes) {
++			for (const bool integerScale : { true, false }) {
++				const UiPlacement placement = ComputeUiPlacement(o, u, integerScale);
++				for (const int ws : ComputeZoomLadder(o.height, 240, 1620)) {
++					const WorldView view = ComputeWorldView(o, u, placement, ws, MainPanelHeight);
++					for (int i = 0; i < 1000; i++) {
++						const Point p { static_cast<int>(rng() % u.width), static_cast<int>(rng() % u.height) };
++						const Point q = UiToWorld(view, p);
++						const double outX = view.uiOriginPx.x + (p.x + 0.5) * view.uiScale;
++						const double outY = view.uiOriginPx.y + (p.y + 0.5) * view.uiScale;
++						EXPECT_LE(view.originPx.x + q.x * ws, outX);
++						EXPECT_GT(view.originPx.x + (q.x + 1) * ws, outX);
++						EXPECT_LE(view.originPx.y + q.y * ws, outY);
++						EXPECT_GT(view.originPx.y + (q.y + 1) * ws, outY);
++
++						const Point w { static_cast<int>(rng() % view.size.width), static_cast<int>(rng() % view.size.height) };
++						const Point v = WorldToUi(view, w);
++						const double worldOutX = view.originPx.x + (w.x + 0.5) * ws;
++						const double worldOutY = view.originPx.y + (w.y + 0.5) * ws;
++						EXPECT_LE(view.uiOriginPx.x + v.x * static_cast<double>(view.uiScale), worldOutX);
++						EXPECT_GT(view.uiOriginPx.x + (v.x + 1) * static_cast<double>(view.uiScale), worldOutX);
++						EXPECT_LE(view.uiOriginPx.y + v.y * static_cast<double>(view.uiScale), worldOutY);
++						EXPECT_GT(view.uiOriginPx.y + (v.y + 1) * static_cast<double>(view.uiScale), worldOutY);
++					}
++				}
++			}
++		}
++	}
++}
++
++TEST(WorldViewTest, RoundTrips)
++{
++	// Note: the bounds are ceil(s_u / ws) for world -> UI -> world (a UI pixel spans s_u / ws world pixels)
++	// and ceil(ws / s_u) for UI -> world -> UI (a world pixel spans ws / s_u UI pixels).
++	std::mt19937 rng(20261002);
++	for (const Size o : Outputs) {
++		for (const Size u : UiSizes) {
++			for (const bool integerScale : { true, false }) {
++				const UiPlacement placement = ComputeUiPlacement(o, u, integerScale);
++				std::vector<int> zoomLevels = ComputeZoomLadder(o.height, 240, 1620);
++				zoomLevels.push_back(7); // not on any ladder
++				for (const int ws : zoomLevels) {
++					SCOPED_TRACE(testing::Message() << "O=" << o.width << "x" << o.height << " U=" << u.width << "x" << u.height
++					                                << " integer=" << integerScale << " ws=" << ws);
++					const WorldView view = ComputeWorldView(o, u, placement, ws, MainPanelHeight);
++					const int worldBound = CeilRatio(view.uiScale, ws);
++					const int uiBound = CeilRatio(ws, view.uiScale);
++					int worldError = 0;
++					int uiError = 0;
++					for (int i = 0; i < 10000; i++) {
++						const Point q { static_cast<int>(rng() % view.size.width), static_cast<int>(rng() % view.size.height) };
++						const Point q2 = UiToWorld(view, WorldToUi(view, q));
++						worldError = std::max({ worldError, std::abs(q2.x - q.x), std::abs(q2.y - q.y) });
++
++						const Point p { static_cast<int>(rng() % u.width), static_cast<int>(rng() % u.height) };
++						const Point p2 = WorldToUi(view, UiToWorld(view, p));
++						uiError = std::max({ uiError, std::abs(p2.x - p.x), std::abs(p2.y - p.y) });
++					}
++					EXPECT_LE(worldError, worldBound);
++					EXPECT_LE(uiError, uiBound);
++				}
++			}
++		}
++	}
++}
++
++TEST(WorldViewTest, IdentityWhenScalesMatch)
++{
++	// 960x540 on 5K with ws = 6: world pixels are UI pixels.
++	const Size o { 5760, 3240 };
++	const Size u { 960, 540 };
++	const WorldView view = ComputeWorldView(o, u, ComputeUiPlacement(o, u, true), 6, MainPanelHeight);
++	for (int y = 0; y < u.height; y += 7) {
++		for (int x = 0; x < u.width; x += 5) {
++			ASSERT_EQ(UiToWorld(view, { x, y }), Point(x, y));
++			ASSERT_EQ(WorldToUi(view, { x, y }), Point(x, y));
++		}
++	}
++}
++
++TEST(WorldViewTest, Anchor)
++{
++	for (const Size o : Outputs) {
++		for (const Size u : UiSizes) {
++			for (const bool integerScale : { true, false }) {
++				const UiPlacement placement = ComputeUiPlacement(o, u, integerScale);
++				for (const int ws : ComputeZoomLadder(o.height, 240, 1620)) {
++					const WorldView view = ComputeWorldView(o, u, placement, ws, MainPanelHeight);
++					EXPECT_EQ(view.anchor, UiToWorld(view, { u.width / 2, (u.height - MainPanelHeight) / 2 }));
++				}
++			}
++		}
++	}
++
++	// Equal to the legacy anchor when the world is drawn at the UI scale.
++	const Size o { 5760, 3240 };
++	const Size u { 960, 540 };
++	const UiPlacement placement = ComputeUiPlacement(o, u, true);
++	EXPECT_EQ(ComputeWorldView(o, u, placement, 6, MainPanelHeight).anchor, Point(480, 206));
++	EXPECT_EQ(ComputeLegacyWorldView(u, MainPanelHeight).anchor, Point(480, 206));
++	EXPECT_EQ(ComputeWorldView(o, u, placement, 3, MainPanelHeight).anchor, Point(961, 413));
++	EXPECT_EQ(ComputeWorldView(o, u, placement, 12, MainPanelHeight).anchor, Point(240, 103));
++}
++
++TEST(WorldViewTest, LegacyView)
++{
++	const WorldView view = ComputeLegacyWorldView({ 640, 480 }, MainPanelHeight);
++	EXPECT_FALSE(view.layered);
++	EXPECT_EQ(view.ws, 1);
++	EXPECT_EQ(view.size, Size(640, 480));
++	EXPECT_EQ(view.anchor, Point(320, 176));
++	EXPECT_EQ(UiToWorld(view, { 17, 33 }), Point(17, 33));
++	EXPECT_EQ(WorldToUi(view, { 17, 33 }), Point(17, 33));
++}
++
++TEST(WorldViewTest, RuntimeStaysLegacyWhenHeadless)
++{
++	// Tests run headless without a renderer, so the layered renderer is never active.
++	EXPECT_FALSE(RecalcWorldView());
++	EXPECT_FALSE(IsLayeredActive());
++	EXPECT_FALSE(GetWorldView().layered);
++
++	const Size o { 5760, 3240 };
++	const Size u { 960, 540 };
++	const WorldView layered = ComputeWorldView(o, u, ComputeUiPlacement(o, u, true), 6, MainPanelHeight);
++	SetWorldViewForTesting(layered);
++	EXPECT_TRUE(IsLayeredActive());
++	EXPECT_EQ(GetWorldView(), layered);
++
++	// Recalculating without a renderer goes back to the legacy view.
++	EXPECT_TRUE(RecalcWorldView());
++	EXPECT_FALSE(IsLayeredActive());
++	EXPECT_FALSE(GetWorldView().layered);
++}
++
++TEST(WorldViewTest, WheelZoomLimiter)
++{
++	WheelZoomLimiter limiter;
++	// A notched wheel turned slowly: every notch steps.
++	EXPECT_TRUE(limiter.Accept(1000, 1));
++	EXPECT_TRUE(limiter.Accept(1000 + WheelZoomLimiter::IdleMs, 1));
++	EXPECT_TRUE(limiter.Accept(1000 + (3 * WheelZoomLimiter::IdleMs), 1));
++
++	// A trackpad gesture: an event every 16 ms for 1.2 s steps at its start and then every RepeatMs.
++	WheelZoomLimiter trackpad;
++	int steps = 0;
++	for (uint32_t t = 5000; t < 6200; t += 16) {
++		if (trackpad.Accept(t, -1))
++			++steps;
++	}
++	EXPECT_EQ(steps, 3);
++
++	// Reversing the direction steps at once, then the burst is limited again.
++	EXPECT_TRUE(trackpad.Accept(6200, 1));
++	EXPECT_FALSE(trackpad.Accept(6216, 1));
++
++	// After an idle gap the next event steps.
++	EXPECT_TRUE(trackpad.Accept(6216 + WheelZoomLimiter::IdleMs, 1));
++
++	// The millisecond counter may wrap.
++	WheelZoomLimiter wrapping;
++	EXPECT_TRUE(wrapping.Accept(0xFFFFFFF0U, 1));
++	EXPECT_FALSE(wrapping.Accept(0xFFFFFFF0U + 16U, 1));
++	EXPECT_TRUE(wrapping.Accept(0xFFFFFFF0U + 16U + WheelZoomLimiter::IdleMs, 1));
++}
++
++#if !defined(USE_SDL1) && !defined(USE_SDL3)
++TEST(WorldViewTest, Options)
++{
++	GraphicsOptions &graphics = GetOptions().Graphics;
++	EXPECT_TRUE(*graphics.independentZoom);
++	EXPECT_EQ(*graphics.worldZoom, 0);
++	EXPECT_EQ(*graphics.worldZoomMinHeight, 240);
++	EXPECT_EQ(*graphics.worldZoomMaxHeight, 1620);
++
++	// Zoom actions do nothing while the layered renderer is not active.
++	WorldZoomIn();
++	WorldZoomOut();
++	WorldZoomToggle();
++	WorldZoomWheel(1);
++	WorldZoomWheel(-1);
++	EXPECT_EQ(*graphics.worldZoom, 0);
++
++	// Option changes without a renderer keep the legacy path.
++	graphics.worldZoom.SetValue(4);
++	EXPECT_FALSE(IsLayeredActive());
++	graphics.worldZoom.SetValue(0);
++}
++
++TEST(WorldViewTest, DemoOverridesIndependentZoom)
++{
++	GetOptions().Graphics.independentZoom.SetValue(true);
++	demo::OverrideOptions();
++	EXPECT_FALSE(*GetOptions().Graphics.independentZoom);
++	EXPECT_FALSE(IsLayeredActive());
++	GetOptions().Graphics.independentZoom.SetValue(true);
++}
++#endif
++
++} // namespace
++} // namespace devilution
