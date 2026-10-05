@@ -1,0 +1,2806 @@
+diff --git a/3rdParty/libwebp/CMakeLists.txt b/3rdParty/libwebp/CMakeLists.txt
+new file mode 100644
+index 0000000..dfa8f5c
+--- /dev/null
++++ b/3rdParty/libwebp/CMakeLists.txt
+@@ -0,0 +1,34 @@
++include(functions/FetchContent_ExcludeFromAll_backport)
++include(FetchContent)
++
++# Only the library itself is needed (no tools, no animation or mux helpers).
++set(WEBP_BUILD_ANIM_UTILS OFF)
++set(WEBP_BUILD_CWEBP OFF)
++set(WEBP_BUILD_DWEBP OFF)
++set(WEBP_BUILD_GIF2WEBP OFF)
++set(WEBP_BUILD_IMG2WEBP OFF)
++set(WEBP_BUILD_VWEBP OFF)
++set(WEBP_BUILD_WEBPINFO OFF)
++set(WEBP_BUILD_WEBPMUX OFF)
++set(WEBP_BUILD_EXTRAS OFF)
++set(WEBP_BUILD_LIBWEBPMUX OFF)
++set(WEBP_BUILD_FUZZTEST OFF)
++set(WEBP_LINK_STATIC ON)
++if(DEVILUTIONX_STATIC_LIBWEBP)
++  set(BUILD_SHARED_LIBS OFF)
++else()
++  set(BUILD_SHARED_LIBS ON)
++endif()
++
++FetchContent_Declare_ExcludeFromAll(libwebp
++  GIT_REPOSITORY https://github.com/webmproject/libwebp.git
++  GIT_TAG f7710292e894c8413edaca4610d11dde843c04fd # v1.5.0
++)
++FetchContent_MakeAvailable_ExcludeFromAll(libwebp)
++
++if(NOT TARGET WebP::webp)
++  add_library(WebP::webp ALIAS webp)
++endif()
++
++# External library, disable warnings.
++target_compile_options(webp PRIVATE -w)
+diff --git a/CMake/Dependencies.cmake b/CMake/Dependencies.cmake
+index 2488f2c..f13b094 100644
+--- a/CMake/Dependencies.cmake
++++ b/CMake/Dependencies.cmake
+@@ -294,6 +294,25 @@ if(NOT NONET AND NOT DISABLE_ZERO_TIER)
+   add_subdirectory(3rdParty/libzt)
+ endif()
+ 
++if(DEVILUTIONX_GL1_RENDERER)
++  # HD texture packs are WebP.
++  if(NOT DEFINED DEVILUTIONX_SYSTEM_LIBWEBP)
++    find_package(WebP CONFIG QUIET)
++    if(WebP_FOUND)
++      message("-- Found libwebp ${WebP_VERSION}")
++    else()
++      message("-- Suitable system libwebp package not found, will use libwebp from source")
++      set(DEVILUTIONX_SYSTEM_LIBWEBP OFF)
++    endif()
++  endif()
++  dependency_options("libwebp" DEVILUTIONX_SYSTEM_LIBWEBP ON DEVILUTIONX_STATIC_LIBWEBP)
++  if(DEVILUTIONX_SYSTEM_LIBWEBP)
++    find_package(WebP CONFIG REQUIRED)
++  else()
++    add_subdirectory(3rdParty/libwebp)
++  endif()
++endif()
++
+ if(DISCORD_INTEGRATION)
+   add_subdirectory(3rdParty/discord)
+ endif()
+diff --git a/CMake/Tests.cmake b/CMake/Tests.cmake
+index 1bbd8d1..b86e28e 100644
+--- a/CMake/Tests.cmake
++++ b/CMake/Tests.cmake
+@@ -81,6 +81,13 @@ set(benchmarks
+   path_benchmark
+ )
+ 
++if(DEVILUTIONX_GL1_RENDERER)
++  list(APPEND tests
++    hd_key_test
++    hd_pack_test
++  )
++endif()
++
+ include(test/Fixtures.cmake)
+ 
+ foreach(test_target ${tests} ${standalone_tests} ${benchmarks})
+@@ -138,6 +145,10 @@ target_link_dependencies(crawl_test PRIVATE libdevilutionx_crawl)
+ target_link_dependencies(crawl_benchmark PRIVATE libdevilutionx_crawl)
+ target_link_dependencies(data_file_test PRIVATE libdevilutionx_txtdata app_fatal_for_testing language_for_testing)
+ target_link_dependencies(dun_render_benchmark PRIVATE libdevilutionx_so)
++if(DEVILUTIONX_GL1_RENDERER)
++  # The tests encode synthetic WebP images.
++  target_link_libraries(hd_pack_test PRIVATE WebP::webp)
++endif()
+ target_link_dependencies(file_util_test PRIVATE libdevilutionx_file_util app_fatal_for_testing)
+ target_link_dependencies(format_int_test PRIVATE libdevilutionx_format_int language_for_testing)
+ target_link_dependencies(ini_test PRIVATE libdevilutionx_ini app_fatal_for_testing)
+diff --git a/Source/CMakeLists.txt b/Source/CMakeLists.txt
+index b1e9025..28d57d2 100644
+--- a/Source/CMakeLists.txt
++++ b/Source/CMakeLists.txt
+@@ -731,10 +731,6 @@ target_link_dependencies(libdevilutionx_options PUBLIC
+   libdevilutionx_strings
+   libdevilutionx_ini
+ )
+-if(DEVILUTIONX_GL1_RENDERER)
+-  target_compile_definitions(libdevilutionx_options PRIVATE DEVILUTIONX_GL1_RENDERER)
+-endif()
+-
+ add_devilutionx_object_library(libdevilutionx_pathfinding
+   engine/path.cpp
+ )
+@@ -1150,6 +1146,26 @@ endif()
+ 
+ if(DEVILUTIONX_GL1_RENDERER)
+   find_package(OpenGL REQUIRED)
++
++  # HD texture packs: no OpenGL calls, unit tested on their own.
++  add_devilutionx_object_library(libdevilutionx_gl1_hd
++    engine/render/gl1/gl1_hd_dump.cpp
++    engine/render/gl1/gl1_hd_json.cpp
++    engine/render/gl1/gl1_hd_key.cpp
++    engine/render/gl1/gl1_hd_pack.cpp
++  )
++  target_include_directories(libdevilutionx_gl1_hd PRIVATE ${PROJECT_SOURCE_DIR}/3rdParty/PicoSHA2)
++  target_link_dependencies(libdevilutionx_gl1_hd
++    PUBLIC
++    DevilutionX::SDL
++    libdevilutionx_surface
++    PRIVATE
++    WebP::webp
++    libdevilutionx_file_util
++    libdevilutionx_strings
++    libdevilutionx_surface_to_png
++  )
++
+   add_devilutionx_object_library(libdevilutionx_gl1_renderer
+     engine/render/gl1/gl1_renderer.cpp
+     engine/render/gl1/gl1_texture_cache.cpp
+@@ -1160,6 +1176,7 @@ if(DEVILUTIONX_GL1_RENDERER)
+     libdevilutionx_surface
+     PRIVATE
+     tl
++    libdevilutionx_gl1_hd
+     libdevilutionx_options
+     libdevilutionx_lighting
+   )
+diff --git a/Source/DiabloUI/settingsmenu.cpp b/Source/DiabloUI/settingsmenu.cpp
+index 30582b2..4bf6e14 100644
+--- a/Source/DiabloUI/settingsmenu.cpp
++++ b/Source/DiabloUI/settingsmenu.cpp
+@@ -247,6 +247,11 @@ bool ChangeOptionValue(OptionEntryBase *pOption, size_t listIndex)
+ 	if (pOption == &GetOptions().Graphics.perPixelLighting) {
+ 		GetRenderer().SetLightingMode(*GetOptions().Graphics.lightingMode);
+ 	}
++#endif
++#ifdef DEVILUTIONX_GL1_RENDERER
++	if (pOption == &GetOptions().Graphics.hdTextures) {
++		GetRenderer().InvalidateTextureCache();
++	}
+ #endif
+ 	if (pOption == &GetOptions().Graphics.lightingMode) {
+ 		GetRenderer().SetLightingMode(*GetOptions().Graphics.lightingMode);
+diff --git a/Source/engine/render/gl1/gl1_hd_dump.cpp b/Source/engine/render/gl1/gl1_hd_dump.cpp
+new file mode 100644
+index 0000000..c20cb23
+--- /dev/null
++++ b/Source/engine/render/gl1/gl1_hd_dump.cpp
+@@ -0,0 +1,79 @@
++#include "engine/render/gl1/gl1_hd_dump.hpp"
++
++#include <cstdio>
++#include <cstdlib>
++#include <vector>
++
++#ifdef USE_SDL3
++#include <SDL3/SDL_iostream.h>
++#endif
++
++#include "engine/surface.hpp"
++#include "utils/file_util.h"
++#include "utils/sdl_compat.h"
++#include "utils/sdl_wrap.h"
++#include "utils/str_cat.hpp"
++#include "utils/surface_to_png.hpp"
++
++namespace devilution {
++
++HdDumper::HdDumper(std::string dir)
++    : dir_(std::move(dir))
++{
++	while (!dir_.empty() && (dir_.back() == '/' || dir_.back() == '\\'))
++		dir_.pop_back();
++}
++
++std::string HdDumper::DirFromEnvironment()
++{
++	const char *dir = std::getenv("DVX_HD_DUMP");
++	return dir != nullptr ? std::string(dir) : std::string();
++}
++
++bool HdDumper::Dump(const HdKey &key, const HdIndexedFrame &frame, const std::array<SDL_Color, 256> &palette, const HdDumpInfo &info)
++{
++	if (!enabled() || frame.width == 0 || frame.height == 0)
++		return false;
++	const std::string hex = HdKeyToHex(key);
++	if (!dumped_.insert(hex).second)
++		return false;
++
++	const std::string subdir = StrCat(dir_, DIRECTORY_SEPARATOR_STR "1x" DIRECTORY_SEPARATOR_STR, hex.substr(0, 2));
++	const std::string path = StrCat(subdir, DIRECTORY_SEPARATOR_STR, hex, ".png");
++	if (FileExists(path))
++		return false;
++	RecursivelyCreateDir(subdir.c_str());
++
++	std::vector<uint8_t> rgba(frame.pixels.size() * 4, 0);
++	for (size_t i = 0; i < frame.pixels.size(); ++i) {
++		const uint16_t pixel = frame.pixels[i];
++		if (pixel == HdTransparentPixel)
++			continue;
++		const SDL_Color &color = palette[pixel];
++		rgba[i * 4 + 0] = color.r;
++		rgba[i * 4 + 1] = color.g;
++		rgba[i * 4 + 2] = color.b;
++		rgba[i * 4 + 3] = 255;
++	}
++	const SDLSurfaceUniquePtr surface = SDLWrap::CreateRGBSurfaceWithFormatFrom(
++	    rgba.data(), frame.width, frame.height, 32, frame.width * 4, SDL_PIXELFORMAT_RGBA32);
++	if (!WriteSurfaceToFilePng(Surface(surface.get()), SDL_IOFromFile(path.c_str(), "wb")).has_value())
++		return false;
++
++	const std::string manifestPath = StrCat(dir_, DIRECTORY_SEPARATOR_STR "manifest.tsv");
++	const bool newManifest = !FileExists(manifestPath);
++	FILE *manifest = OpenFile(manifestPath.c_str(), "ab");
++	if (manifest != nullptr) {
++		if (newManifest) {
++			constexpr std::string_view Header = "key\tkind\twidth\theight\ttile_type\ttrn\tlevel_type\n";
++			std::fwrite(Header.data(), 1, Header.size(), manifest);
++		}
++		const std::string line = StrCat(hex, "\t", info.kind, "\t", frame.width, "\t", frame.height, "\t",
++		    info.tileType, "\t", info.trn ? "trn" : "none", "\t", info.levelType, "\n");
++		std::fwrite(line.data(), 1, line.size(), manifest);
++		std::fclose(manifest);
++	}
++	return true;
++}
++
++} // namespace devilution
+diff --git a/Source/engine/render/gl1/gl1_hd_dump.hpp b/Source/engine/render/gl1/gl1_hd_dump.hpp
+new file mode 100644
+index 0000000..4ba9a74
+--- /dev/null
++++ b/Source/engine/render/gl1/gl1_hd_dump.hpp
+@@ -0,0 +1,59 @@
++/**
++ * @file gl1_hd_dump.hpp
++ *
++ * Dump mode for building HD packs: with `DVX_HD_DUMP=<dir>` set, every sprite and tile frame
++ * the GL1 renderer uploads is written once as `<dir>/1x/<kk>/<key>.png`, and a line is added
++ * to `<dir>/manifest.tsv`. These are exactly the frames, and keys, the HD loader looks up.
++ */
++#pragma once
++
++#include <array>
++#include <cstdint>
++#include <string>
++#include <string_view>
++#include <unordered_set>
++
++#ifdef USE_SDL3
++#include <SDL3/SDL_pixels.h>
++#else
++#include <SDL.h>
++#endif
++
++#include "engine/render/gl1/gl1_hd_key.hpp"
++
++namespace devilution {
++
++/** @brief What a dumped frame is, for `manifest.tsv`. */
++struct HdDumpInfo {
++	/** "sprite" or "tile". */
++	std::string_view kind;
++	/** Tile type number (`TileType`), or -1 for sprites. */
++	int tileType = -1;
++	/** Whether a TRN (colour translation) was applied. */
++	bool trn = false;
++	/** `dungeon_type` of the current level. */
++	int levelType = 0;
++};
++
++class HdDumper {
++public:
++	/** @brief Dumps into `dir`; an empty `dir` disables dumping. */
++	explicit HdDumper(std::string dir);
++
++	/** @brief Directory from the `DVX_HD_DUMP` environment variable (empty if unset). */
++	static std::string DirFromEnvironment();
++
++	[[nodiscard]] bool enabled() const { return !dir_.empty(); }
++
++	/**
++	 * @brief Writes the frame (once per key) as straight-alpha RGBA PNG, colours from `palette`.
++	 * @return true if a new file was written.
++	 */
++	bool Dump(const HdKey &key, const HdIndexedFrame &frame, const std::array<SDL_Color, 256> &palette, const HdDumpInfo &info);
++
++private:
++	std::string dir_;
++	std::unordered_set<std::string> dumped_;
++};
++
++} // namespace devilution
+diff --git a/Source/engine/render/gl1/gl1_hd_json.cpp b/Source/engine/render/gl1/gl1_hd_json.cpp
+new file mode 100644
+index 0000000..f3c9dcc
+--- /dev/null
++++ b/Source/engine/render/gl1/gl1_hd_json.cpp
+@@ -0,0 +1,342 @@
++#include "engine/render/gl1/gl1_hd_json.hpp"
++
++#include <cmath>
++#include <cstdint>
++#include <cstdlib>
++
++namespace devilution {
++
++namespace {
++
++constexpr int MaxDepth = 64;
++
++class Parser {
++public:
++	explicit Parser(std::string_view text)
++	    : text_(text)
++	{
++	}
++
++	std::optional<HdJsonValue> ParseDocument()
++	{
++		SkipWhitespace();
++		std::optional<HdJsonValue> value = ParseValue(0);
++		if (!value)
++			return std::nullopt;
++		SkipWhitespace();
++		if (pos_ != text_.size())
++			return Fail("trailing characters");
++		return value;
++	}
++
++	std::string error;
++
++private:
++	std::nullopt_t Fail(const char *message)
++	{
++		if (error.empty())
++			error = std::string(message) + " at offset " + std::to_string(pos_);
++		return std::nullopt;
++	}
++
++	void SkipWhitespace()
++	{
++		while (pos_ < text_.size() && (text_[pos_] == ' ' || text_[pos_] == '\t' || text_[pos_] == '\n' || text_[pos_] == '\r'))
++			++pos_;
++	}
++
++	bool Consume(std::string_view literal)
++	{
++		if (text_.substr(pos_, literal.size()) != literal)
++			return false;
++		pos_ += literal.size();
++		return true;
++	}
++
++	std::optional<HdJsonValue> ParseValue(int depth)
++	{
++		if (depth > MaxDepth)
++			return Fail("nesting too deep");
++		if (pos_ >= text_.size())
++			return Fail("unexpected end");
++		switch (text_[pos_]) {
++		case '{':
++			return ParseObject(depth);
++		case '[':
++			return ParseArray(depth);
++		case '"': {
++			std::optional<std::string> str = ParseString();
++			if (!str)
++				return std::nullopt;
++			return HdJsonValue::MakeString(std::move(*str));
++		}
++		case 't':
++			if (Consume("true"))
++				return HdJsonValue::MakeBool(true);
++			break;
++		case 'f':
++			if (Consume("false"))
++				return HdJsonValue::MakeBool(false);
++			break;
++		case 'n':
++			if (Consume("null"))
++				return HdJsonValue::MakeNull();
++			break;
++		default:
++			return ParseNumber();
++		}
++		return Fail("invalid literal");
++	}
++
++	std::optional<HdJsonValue> ParseObject(int depth)
++	{
++		++pos_; // '{'
++		HdJsonValue::Object members;
++		SkipWhitespace();
++		if (pos_ < text_.size() && text_[pos_] == '}') {
++			++pos_;
++			return HdJsonValue::MakeObject(std::move(members));
++		}
++		while (true) {
++			SkipWhitespace();
++			if (pos_ >= text_.size() || text_[pos_] != '"')
++				return Fail("expected member name");
++			std::optional<std::string> name = ParseString();
++			if (!name)
++				return std::nullopt;
++			SkipWhitespace();
++			if (!Consume(":"))
++				return Fail("expected ':'");
++			SkipWhitespace();
++			std::optional<HdJsonValue> value = ParseValue(depth + 1);
++			if (!value)
++				return std::nullopt;
++			members.emplace_back(std::move(*name), std::move(*value));
++			SkipWhitespace();
++			if (Consume("}"))
++				return HdJsonValue::MakeObject(std::move(members));
++			if (!Consume(","))
++				return Fail("expected ',' or '}'");
++		}
++	}
++
++	std::optional<HdJsonValue> ParseArray(int depth)
++	{
++		++pos_; // '['
++		HdJsonValue::Array elements;
++		SkipWhitespace();
++		if (Consume("]"))
++			return HdJsonValue::MakeArray(std::move(elements));
++		while (true) {
++			SkipWhitespace();
++			std::optional<HdJsonValue> value = ParseValue(depth + 1);
++			if (!value)
++				return std::nullopt;
++			elements.push_back(std::move(*value));
++			SkipWhitespace();
++			if (Consume("]"))
++				return HdJsonValue::MakeArray(std::move(elements));
++			if (!Consume(","))
++				return Fail("expected ',' or ']'");
++		}
++	}
++
++	std::optional<uint32_t> ParseHex4()
++	{
++		if (pos_ + 4 > text_.size())
++			return std::nullopt;
++		uint32_t value = 0;
++		for (int i = 0; i < 4; ++i) {
++			const char c = text_[pos_++];
++			value <<= 4;
++			if (c >= '0' && c <= '9') value |= c - '0';
++			else if (c >= 'a' && c <= 'f') value |= c - 'a' + 10;
++			else if (c >= 'A' && c <= 'F') value |= c - 'A' + 10;
++			else return std::nullopt;
++		}
++		return value;
++	}
++
++	static void AppendUtf8(std::string &out, uint32_t cp)
++	{
++		if (cp < 0x80) {
++			out += static_cast<char>(cp);
++		} else if (cp < 0x800) {
++			out += static_cast<char>(0xC0 | (cp >> 6));
++			out += static_cast<char>(0x80 | (cp & 0x3F));
++		} else if (cp < 0x10000) {
++			out += static_cast<char>(0xE0 | (cp >> 12));
++			out += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
++			out += static_cast<char>(0x80 | (cp & 0x3F));
++		} else {
++			out += static_cast<char>(0xF0 | (cp >> 18));
++			out += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
++			out += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
++			out += static_cast<char>(0x80 | (cp & 0x3F));
++		}
++	}
++
++	std::optional<std::string> ParseString()
++	{
++		++pos_; // '"'
++		std::string out;
++		while (true) {
++			if (pos_ >= text_.size())
++				return Fail("unterminated string");
++			const char c = text_[pos_++];
++			if (c == '"')
++				return out;
++			if (static_cast<unsigned char>(c) < 0x20)
++				return Fail("control character in string");
++			if (c != '\\') {
++				out += c;
++				continue;
++			}
++			if (pos_ >= text_.size())
++				return Fail("unterminated escape");
++			const char e = text_[pos_++];
++			switch (e) {
++			case '"': out += '"'; break;
++			case '\\': out += '\\'; break;
++			case '/': out += '/'; break;
++			case 'b': out += '\b'; break;
++			case 'f': out += '\f'; break;
++			case 'n': out += '\n'; break;
++			case 'r': out += '\r'; break;
++			case 't': out += '\t'; break;
++			case 'u': {
++				std::optional<uint32_t> cp = ParseHex4();
++				if (!cp)
++					return Fail("invalid \\u escape");
++				if (*cp >= 0xD800 && *cp <= 0xDBFF) {
++					if (!Consume("\\u"))
++						return Fail("unpaired surrogate");
++					std::optional<uint32_t> low = ParseHex4();
++					if (!low || *low < 0xDC00 || *low > 0xDFFF)
++						return Fail("unpaired surrogate");
++					*cp = 0x10000 + ((*cp - 0xD800) << 10) + (*low - 0xDC00);
++				} else if (*cp >= 0xDC00 && *cp <= 0xDFFF) {
++					return Fail("unpaired surrogate");
++				}
++				AppendUtf8(out, *cp);
++				break;
++			}
++			default:
++				return Fail("invalid escape");
++			}
++		}
++	}
++
++	std::optional<HdJsonValue> ParseNumber()
++	{
++		const size_t start = pos_;
++		const auto digits = [&]() {
++			const size_t from = pos_;
++			while (pos_ < text_.size() && text_[pos_] >= '0' && text_[pos_] <= '9')
++				++pos_;
++			return pos_ > from;
++		};
++		if (pos_ < text_.size() && text_[pos_] == '-')
++			++pos_;
++		if (pos_ < text_.size() && text_[pos_] == '0') {
++			++pos_;
++		} else if (!digits()) {
++			return Fail("invalid value");
++		}
++		if (pos_ < text_.size() && text_[pos_] == '.') {
++			++pos_;
++			if (!digits())
++				return Fail("invalid number");
++		}
++		if (pos_ < text_.size() && (text_[pos_] == 'e' || text_[pos_] == 'E')) {
++			++pos_;
++			if (pos_ < text_.size() && (text_[pos_] == '+' || text_[pos_] == '-'))
++				++pos_;
++			if (!digits())
++				return Fail("invalid number");
++		}
++		const std::string number(text_.substr(start, pos_ - start));
++		return HdJsonValue::MakeNumber(std::strtod(number.c_str(), nullptr));
++	}
++
++	std::string_view text_;
++	size_t pos_ = 0;
++};
++
++} // namespace
++
++const HdJsonValue *HdJsonValue::Find(std::string_view key) const
++{
++	if (type_ != Type::Object)
++		return nullptr;
++	for (const auto &[name, value] : object_) {
++		if (name == key)
++			return &value;
++	}
++	return nullptr;
++}
++
++std::optional<int> HdJsonValue::GetInt(std::string_view key, int min, int max) const
++{
++	const HdJsonValue *value = Find(key);
++	if (value == nullptr || !value->IsNumber())
++		return std::nullopt;
++	const double number = value->AsNumber();
++	if (number != std::floor(number) || number < min || number > max)
++		return std::nullopt;
++	return static_cast<int>(number);
++}
++
++std::optional<std::string_view> HdJsonValue::GetString(std::string_view key) const
++{
++	const HdJsonValue *value = Find(key);
++	if (value == nullptr || !value->IsString())
++		return std::nullopt;
++	return std::string_view(value->AsString());
++}
++
++HdJsonValue HdJsonValue::MakeBool(bool value)
++{
++	HdJsonValue result(Type::Bool);
++	result.bool_ = value;
++	return result;
++}
++
++HdJsonValue HdJsonValue::MakeNumber(double value)
++{
++	HdJsonValue result(Type::Number);
++	result.number_ = value;
++	return result;
++}
++
++HdJsonValue HdJsonValue::MakeString(std::string value)
++{
++	HdJsonValue result(Type::String);
++	result.string_ = std::move(value);
++	return result;
++}
++
++HdJsonValue HdJsonValue::MakeArray(Array value)
++{
++	HdJsonValue result(Type::Array);
++	result.array_ = std::move(value);
++	return result;
++}
++
++HdJsonValue HdJsonValue::MakeObject(Object value)
++{
++	HdJsonValue result(Type::Object);
++	result.object_ = std::move(value);
++	return result;
++}
++
++std::optional<HdJsonValue> ParseHdJson(std::string_view text, std::string *error)
++{
++	Parser parser(text);
++	std::optional<HdJsonValue> result = parser.ParseDocument();
++	if (!result && error != nullptr)
++		*error = parser.error;
++	return result;
++}
++
++} // namespace devilution
+diff --git a/Source/engine/render/gl1/gl1_hd_json.hpp b/Source/engine/render/gl1/gl1_hd_json.hpp
+new file mode 100644
+index 0000000..6fa3fdb
+--- /dev/null
++++ b/Source/engine/render/gl1/gl1_hd_json.hpp
+@@ -0,0 +1,78 @@
++/**
++ * @file gl1_hd_json.hpp
++ *
++ * A small JSON reader for HD pack manifests (RFC 8259, UTF-8, no extensions).
++ */
++#pragma once
++
++#include <cstdint>
++#include <memory>
++#include <optional>
++#include <string>
++#include <string_view>
++#include <utility>
++#include <vector>
++
++namespace devilution {
++
++class HdJsonValue {
++public:
++	enum class Type : uint8_t {
++		Null,
++		Bool,
++		Number,
++		String,
++		Array,
++		Object,
++	};
++
++	using Array = std::vector<HdJsonValue>;
++	using Object = std::vector<std::pair<std::string, HdJsonValue>>;
++
++	[[nodiscard]] Type type() const { return type_; }
++	[[nodiscard]] bool IsNumber() const { return type_ == Type::Number; }
++	[[nodiscard]] bool IsString() const { return type_ == Type::String; }
++	[[nodiscard]] bool IsArray() const { return type_ == Type::Array; }
++	[[nodiscard]] bool IsObject() const { return type_ == Type::Object; }
++
++	[[nodiscard]] bool AsBool() const { return bool_; }
++	[[nodiscard]] double AsNumber() const { return number_; }
++	[[nodiscard]] const std::string &AsString() const { return string_; }
++	[[nodiscard]] const Array &AsArray() const { return array_; }
++	[[nodiscard]] const Object &AsObject() const { return object_; }
++
++	/** @brief Member of an object, or null if absent or not an object. */
++	[[nodiscard]] const HdJsonValue *Find(std::string_view key) const;
++
++	/** @brief Integer member, if present and a whole number in [min, max]. */
++	[[nodiscard]] std::optional<int> GetInt(std::string_view key, int min, int max) const;
++	[[nodiscard]] std::optional<std::string_view> GetString(std::string_view key) const;
++
++	static HdJsonValue MakeNull() { return HdJsonValue(Type::Null); }
++	static HdJsonValue MakeBool(bool value);
++	static HdJsonValue MakeNumber(double value);
++	static HdJsonValue MakeString(std::string value);
++	static HdJsonValue MakeArray(Array value);
++	static HdJsonValue MakeObject(Object value);
++
++private:
++	explicit HdJsonValue(Type type)
++	    : type_(type)
++	{
++	}
++
++	Type type_;
++	bool bool_ = false;
++	double number_ = 0;
++	std::string string_;
++	Array array_;
++	Object object_;
++};
++
++/**
++ * @brief Parses a complete JSON document.
++ * @param error Set to a short description on failure.
++ */
++std::optional<HdJsonValue> ParseHdJson(std::string_view text, std::string *error = nullptr);
++
++} // namespace devilution
+diff --git a/Source/engine/render/gl1/gl1_hd_key.cpp b/Source/engine/render/gl1/gl1_hd_key.cpp
+new file mode 100644
+index 0000000..46887ac
+--- /dev/null
++++ b/Source/engine/render/gl1/gl1_hd_key.cpp
+@@ -0,0 +1,199 @@
++#include "engine/render/gl1/gl1_hd_key.hpp"
++
++#include <algorithm>
++
++#include <picosha2.h>
++
++#include "utils/clx_decode.hpp"
++
++namespace devilution {
++
++namespace {
++
++constexpr char HexDigits[] = "0123456789abcdef";
++
++void SetPixel(HdIndexedFrame &frame, int x, int y, uint8_t index)
++{
++	if (x < 0 || x >= frame.width || y < 0 || y >= frame.height)
++		return;
++	frame.pixels[static_cast<size_t>(y) * frame.width + x] = index;
++}
++
++HdIndexedFrame MakeTransparentFrame(int width, int height)
++{
++	HdIndexedFrame frame;
++	frame.width = static_cast<uint16_t>(width);
++	frame.height = static_cast<uint16_t>(height);
++	frame.pixels.assign(static_cast<size_t>(width) * height, HdTransparentPixel);
++	return frame;
++}
++
++int HexValue(char c)
++{
++	if (c >= '0' && c <= '9') return c - '0';
++	if (c >= 'a' && c <= 'f') return c - 'a' + 10;
++	if (c >= 'A' && c <= 'F') return c - 'A' + 10;
++	return -1;
++}
++
++} // namespace
++
++HdIndexedFrame DecodeClxToIndexed(ClxSprite clx, const uint8_t *trn)
++{
++	const int width = clx.width();
++	const int height = clx.height();
++	HdIndexedFrame frame = MakeTransparentFrame(width, height);
++
++	const uint8_t *src = clx.pixelData();
++	const uint8_t *const srcEnd = src + clx.pixelDataSize();
++
++	// CLX rows are stored bottom to top; commands may span rows.
++	int row = height - 1;
++	int x = 0;
++	const auto put = [&](uint8_t index) {
++		SetPixel(frame, x, row, trn != nullptr ? trn[index] : index);
++		++x;
++	};
++	while (src < srcEnd && row >= 0) {
++		const uint8_t v = *src++;
++		if (!IsClxOpaque(v)) {
++			x += v;
++		} else if (IsClxOpaqueFill(v)) {
++			const uint8_t fillWidth = GetClxOpaqueFillWidth(v);
++			if (src >= srcEnd)
++				break;
++			const uint8_t index = *src++;
++			for (int i = 0; i < fillWidth; ++i)
++				put(index);
++		} else {
++			const uint8_t runLength = GetClxOpaquePixelsWidth(v);
++			for (int i = 0; i < runLength && src < srcEnd; ++i)
++				put(*src++);
++		}
++		while (x >= width && row >= 0) {
++			x -= width;
++			--row;
++		}
++	}
++	return frame;
++}
++
++HdIndexedFrame DecodeDunTileToIndexed(const uint8_t *frameData, TileType tileType, int height)
++{
++	constexpr int Width = DunFrameWidth;
++	constexpr int XStep = 2;
++	constexpr int LowerHeight = DunFrameHeight / 2;
++	constexpr int TriangleUpperHeight = (DunFrameHeight / 2) - 1;
++	constexpr int TrapezoidUpperHeight = DunFrameHeight / 2;
++
++	HdIndexedFrame frame = MakeTransparentFrame(Width, height);
++	const uint8_t *src = frameData;
++	int row = height - 1; // Tile data is stored bottom to top.
++
++	const auto copyRow = [&](int startX, int rowWidth) {
++		for (int x = 0; x < rowWidth; ++x)
++			SetPixel(frame, startX + x, row, *src++);
++		--row;
++	};
++
++	switch (tileType) {
++	case TileType::Square:
++		for (int i = 0; i < height; ++i)
++			copyRow(0, Width);
++		break;
++	case TileType::TransparentSquare:
++		for (int i = 0; i < height; ++i) {
++			int x = 0;
++			while (x < Width) {
++				const auto run = static_cast<int8_t>(*src++);
++				if (run < 0) {
++					x -= run;
++					continue;
++				}
++				for (int j = 0; j < run; ++j)
++					SetPixel(frame, x++, row, *src++);
++			}
++			--row;
++		}
++		break;
++	case TileType::LeftTriangle:
++		for (int i = 0; i < LowerHeight; ++i)
++			copyRow(Width - XStep * (i + 1), XStep * (i + 1));
++		for (int i = 0; i < TriangleUpperHeight; ++i)
++			copyRow(XStep * (i + 1), Width - XStep * (i + 1));
++		break;
++	case TileType::RightTriangle:
++		for (int i = 0; i < LowerHeight; ++i)
++			copyRow(0, XStep * (i + 1));
++		for (int i = 0; i < TriangleUpperHeight; ++i)
++			copyRow(0, Width - XStep * (i + 1));
++		break;
++	case TileType::LeftTrapezoid:
++		for (int i = 0; i < LowerHeight; ++i)
++			copyRow(Width - XStep * (i + 1), XStep * (i + 1));
++		for (int i = 0; i < TrapezoidUpperHeight; ++i)
++			copyRow(0, Width);
++		break;
++	case TileType::RightTrapezoid:
++		for (int i = 0; i < LowerHeight; ++i)
++			copyRow(0, XStep * (i + 1));
++		for (int i = 0; i < TrapezoidUpperHeight; ++i)
++			copyRow(0, Width);
++		break;
++	}
++	return frame;
++}
++
++HdKey ComputeHdKey(const HdIndexedFrame &frame)
++{
++	std::vector<uint8_t> message;
++	message.reserve(4 + frame.pixels.size() * 2);
++	const auto putU16 = [&](uint16_t value) {
++		message.push_back(static_cast<uint8_t>(value & 0xFF));
++		message.push_back(static_cast<uint8_t>(value >> 8));
++	};
++	putU16(frame.width);
++	putU16(frame.height);
++	for (const uint16_t pixel : frame.pixels)
++		putU16(pixel);
++
++	HdKey key;
++	picosha2::hash256(message.begin(), message.end(), key.begin(), key.end());
++	return key;
++}
++
++std::string HdKeyToHex(const HdKey &key)
++{
++	std::string hex;
++	hex.reserve(key.size() * 2);
++	for (const uint8_t byte : key) {
++		hex += HexDigits[byte >> 4];
++		hex += HexDigits[byte & 0xF];
++	}
++	return hex;
++}
++
++std::optional<HdKey> HdKeyFromHex(std::string_view hex)
++{
++	HdKey key;
++	if (hex.size() != key.size() * 2)
++		return std::nullopt;
++	for (size_t i = 0; i < key.size(); ++i) {
++		const int hi = HexValue(hex[2 * i]);
++		const int lo = HexValue(hex[2 * i + 1]);
++		if (hi < 0 || lo < 0)
++			return std::nullopt;
++		key[i] = static_cast<uint8_t>((hi << 4) | lo);
++	}
++	return key;
++}
++
++bool UsesAnimatedIndices(const HdIndexedFrame &frame, HdAnimatedRange range)
++{
++	if (range.first > range.last)
++		return false;
++	return std::any_of(frame.pixels.begin(), frame.pixels.end(),
++	    [range](uint16_t pixel) { return range.Contains(pixel); });
++}
++
++} // namespace devilution
+diff --git a/Source/engine/render/gl1/gl1_hd_key.hpp b/Source/engine/render/gl1/gl1_hd_key.hpp
+new file mode 100644
+index 0000000..22a038b
+--- /dev/null
++++ b/Source/engine/render/gl1/gl1_hd_key.hpp
+@@ -0,0 +1,78 @@
++/**
++ * @file gl1_hd_key.hpp
++ *
++ * Content keys for HD texture packs.
++ *
++ * An HD texture replaces one 1x sprite frame or dungeon tile frame. It is found by a key
++ * computed from the frame's palette indices, so it does not depend on the asset path
++ * (a `ClxSprite` does not know it) and recoloured (TRN) variants get their own keys.
++ *
++ * Key = SHA-256 over: width (u16 LE), height (u16 LE), then every pixel in row-major
++ * order from the top-left corner as u16 LE: the palette index after TRN, or 0x0100 for a
++ * transparent pixel. See docs/hd-pack-format.md.
++ */
++#pragma once
++
++#include <array>
++#include <cstdint>
++#include <optional>
++#include <span>
++#include <string>
++#include <string_view>
++#include <vector>
++
++#include "engine/clx_sprite.hpp"
++#include "levels/dun_tile.hpp"
++
++namespace devilution {
++
++/** @brief Pixel value of a transparent pixel in an indexed HD frame. */
++constexpr uint16_t HdTransparentPixel = 0x0100;
++
++/** @brief A frame decoded to palette indices (or `HdTransparentPixel`), top-down. */
++struct HdIndexedFrame {
++	uint16_t width = 0;
++	uint16_t height = 0;
++	std::vector<uint16_t> pixels;
++
++	[[nodiscard]] bool IsOpaque(int x, int y) const
++	{
++		return pixels[static_cast<size_t>(y) * width + x] != HdTransparentPixel;
++	}
++};
++
++using HdKey = std::array<uint8_t, 32>;
++
++/** @brief Decodes a CLX sprite frame, applying `trn` (may be null) to every opaque pixel. */
++HdIndexedFrame DecodeClxToIndexed(ClxSprite clx, const uint8_t *trn);
++
++/**
++ * @brief Decodes a dungeon tile frame (level CEL micro-tile) as the GL1 renderer draws it:
++ * 32 pixels wide, `height` rows, pixels outside the tile's shape are transparent.
++ */
++HdIndexedFrame DecodeDunTileToIndexed(const uint8_t *frameData, TileType tileType, int height);
++
++HdKey ComputeHdKey(const HdIndexedFrame &frame);
++
++/** @brief 64 lowercase hex digits. */
++std::string HdKeyToHex(const HdKey &key);
++std::optional<HdKey> HdKeyFromHex(std::string_view hex);
++
++/**
++ * @brief Palette indices that colour cycling animates on the current level, as an inclusive
++ * range. `first > last` means none.
++ */
++struct HdAnimatedRange {
++	uint8_t first = 1;
++	uint8_t last = 0;
++
++	[[nodiscard]] bool Contains(uint16_t pixel) const
++	{
++		return pixel >= first && pixel <= last;
++	}
++};
++
++/** @brief Whether any opaque pixel of the frame uses an animated palette index. */
++bool UsesAnimatedIndices(const HdIndexedFrame &frame, HdAnimatedRange range);
++
++} // namespace devilution
+diff --git a/Source/engine/render/gl1/gl1_hd_pack.cpp b/Source/engine/render/gl1/gl1_hd_pack.cpp
+new file mode 100644
+index 0000000..0661926
+--- /dev/null
++++ b/Source/engine/render/gl1/gl1_hd_pack.cpp
+@@ -0,0 +1,260 @@
++#include "engine/render/gl1/gl1_hd_pack.hpp"
++
++#include <algorithm>
++#include <cstdio>
++
++#include <webp/decode.h>
++
++#include "engine/render/gl1/gl1_hd_json.hpp"
++#include "utils/file_util.h"
++
++namespace devilution {
++
++namespace {
++
++constexpr std::string_view ManifestName = "manifest.json";
++
++void SetError(std::string *error, std::string message)
++{
++	if (error != nullptr)
++		*error = std::move(message);
++}
++
++std::optional<std::vector<uint8_t>> ReadWholeFile(const std::string &path)
++{
++	FILE *file = OpenFile(path.c_str(), "rb");
++	if (file == nullptr)
++		return std::nullopt;
++	std::vector<uint8_t> data;
++	uint8_t buffer[65536];
++	size_t count;
++	while ((count = std::fread(buffer, 1, sizeof(buffer), file)) > 0)
++		data.insert(data.end(), buffer, buffer + count);
++	const bool failed = std::ferror(file) != 0;
++	std::fclose(file);
++	if (failed)
++		return std::nullopt;
++	return data;
++}
++
++/** @brief Pack-relative POSIX path -> native path, or nullopt if it could escape the pack. */
++std::optional<std::string> ResolveImagePath(std::string_view file, const std::string &baseDir)
++{
++	if (file.empty() || file.front() == '/' || file.find('\\') != std::string_view::npos || file.find(':') != std::string_view::npos)
++		return std::nullopt;
++	std::string result = baseDir;
++	size_t start = 0;
++	while (start <= file.size()) {
++		size_t end = file.find('/', start);
++		if (end == std::string_view::npos)
++			end = file.size();
++		const std::string_view part = file.substr(start, end - start);
++		if (part.empty() || part == "." || part == "..")
++			return std::nullopt;
++		result += DIRECTORY_SEPARATOR_STR;
++		result.append(part);
++		start = end + 1;
++	}
++	return result;
++}
++
++void CollectManifests(const std::string &dir, std::vector<std::string> &out, int depth)
++{
++	if (depth > 16)
++		return;
++	for (const std::string &file : ListFiles(dir.c_str())) {
++		if (file == ManifestName)
++			out.push_back(dir);
++	}
++	std::vector<std::string> subdirs = ListDirectories(dir.c_str());
++	std::sort(subdirs.begin(), subdirs.end());
++	for (const std::string &subdir : subdirs)
++		CollectManifests(dir + DIRECTORY_SEPARATOR_STR + subdir, out, depth + 1);
++}
++
++} // namespace
++
++void HdPackIndex::AddPacksIn(const std::string &packsRoot)
++{
++	if (!DirectoryExists(packsRoot))
++		return;
++	std::vector<std::string> packs = ListDirectories(packsRoot.c_str());
++	std::sort(packs.begin(), packs.end());
++	for (const std::string &pack : packs)
++		AddPack(packsRoot + DIRECTORY_SEPARATOR_STR + pack);
++}
++
++void HdPackIndex::AddPack(const std::string &packDir)
++{
++	std::vector<std::string> manifestDirs;
++	CollectManifests(packDir, manifestDirs, 0);
++	for (const std::string &dir : manifestDirs) {
++		const std::string manifestPath = dir + DIRECTORY_SEPARATOR_STR + std::string(ManifestName);
++		std::optional<std::vector<uint8_t>> data = ReadWholeFile(manifestPath);
++		if (!data)
++			continue;
++		const std::string_view json(reinterpret_cast<const char *>(data->data()), data->size());
++		AddManifest(json, dir);
++	}
++}
++
++std::optional<size_t> HdPackIndex::AddManifest(std::string_view json, const std::string &baseDir, std::string *error)
++{
++	std::string parseError;
++	std::optional<HdJsonValue> root = ParseHdJson(json, &parseError);
++	if (!root || !root->IsObject()) {
++		SetError(error, root ? "manifest is not an object" : parseError);
++		return std::nullopt;
++	}
++	const std::optional<int> scale = root->GetInt("scale", 1, 64);
++	if (scale != HdPackScale) {
++		SetError(error, "unsupported scale (only 4 is supported)");
++		return std::nullopt;
++	}
++	const HdJsonValue *frames = root->Find("frames");
++	if (frames == nullptr || !frames->IsArray()) {
++		SetError(error, "missing frames");
++		return std::nullopt;
++	}
++
++	size_t added = 0;
++	for (const HdJsonValue &frame : frames->AsArray()) {
++		const std::optional<std::string_view> sha = frame.GetString("sha256");
++		const std::optional<std::string_view> file = frame.GetString("file");
++		const std::optional<int> width = frame.GetInt("width", 1, 4096);
++		const std::optional<int> height = frame.GetInt("height", 1, 4096);
++		if (!sha || !file || !width || !height)
++			continue;
++		const std::optional<HdKey> key = HdKeyFromHex(*sha);
++		const std::optional<std::string> path = ResolveImagePath(*file, baseDir);
++		if (!key || !path)
++			continue;
++
++		HdPackEntry entry;
++		entry.path = *path;
++		entry.width = static_cast<uint16_t>(*width);
++		entry.height = static_cast<uint16_t>(*height);
++		entry.bboxWidth = *width * HdPackScale;
++		entry.bboxHeight = *height * HdPackScale;
++		if (const HdJsonValue *bbox = frame.Find("bbox"); bbox != nullptr) {
++			if (!bbox->IsArray() || bbox->AsArray().size() != 4)
++				continue;
++			int values[4];
++			bool valid = true;
++			for (size_t i = 0; i < 4; ++i) {
++				const HdJsonValue &v = bbox->AsArray()[i];
++				valid = valid && v.IsNumber() && v.AsNumber() >= 0 && v.AsNumber() <= 65536;
++				values[i] = valid ? static_cast<int>(v.AsNumber()) : 0;
++			}
++			if (!valid)
++				continue;
++			entry.bboxX = values[0];
++			entry.bboxY = values[1];
++			entry.bboxWidth = values[2];
++			entry.bboxHeight = values[3];
++		}
++		if (entries_.try_emplace(*key, std::move(entry)).second)
++			++added;
++	}
++	return added;
++}
++
++const HdPackEntry *HdPackIndex::Find(const HdKey &key) const
++{
++	const auto it = entries_.find(key);
++	return it != entries_.end() ? &it->second : nullptr;
++}
++
++std::optional<HdImage> DecodeWebp(std::span<const uint8_t> data)
++{
++	int width = 0;
++	int height = 0;
++	uint8_t *pixels = WebPDecodeRGBA(data.data(), data.size(), &width, &height);
++	if (pixels == nullptr)
++		return std::nullopt;
++	HdImage image;
++	image.width = width;
++	image.height = height;
++	image.rgba.assign(pixels, pixels + static_cast<size_t>(width) * height * 4);
++	WebPFree(pixels);
++	return image;
++}
++
++std::optional<HdImage> ComposeHdImage(const HdPackEntry &entry, const HdImage &decoded,
++    const HdIndexedFrame &frame, std::span<const uint8_t> alpha1x, std::string *error)
++{
++	if (entry.width != frame.width || entry.height != frame.height) {
++		SetError(error, "manifest size does not match the frame");
++		return std::nullopt;
++	}
++	const int width = frame.width * HdPackScale;
++	const int height = frame.height * HdPackScale;
++	if (decoded.width != entry.bboxWidth || decoded.height != entry.bboxHeight) {
++		SetError(error, "image size does not match its bbox");
++		return std::nullopt;
++	}
++	if (entry.bboxX + entry.bboxWidth > width || entry.bboxY + entry.bboxHeight > height) {
++		SetError(error, "bbox is outside the frame");
++		return std::nullopt;
++	}
++	if (!alpha1x.empty() && alpha1x.size() != frame.pixels.size()) {
++		SetError(error, "alpha mask size does not match the frame");
++		return std::nullopt;
++	}
++
++	// The 1x silhouette, dilated by one pixel.
++	std::vector<uint8_t> allowed(frame.pixels.size(), 0);
++	for (int y = 0; y < frame.height; ++y) {
++		for (int x = 0; x < frame.width; ++x) {
++			if (!frame.IsOpaque(x, y))
++				continue;
++			for (int dy = -1; dy <= 1; ++dy) {
++				for (int dx = -1; dx <= 1; ++dx) {
++					const int nx = x + dx;
++					const int ny = y + dy;
++					if (nx >= 0 && nx < frame.width && ny >= 0 && ny < frame.height)
++						allowed[static_cast<size_t>(ny) * frame.width + nx] = 1;
++				}
++			}
++		}
++	}
++
++	HdImage result;
++	result.width = width;
++	result.height = height;
++	result.rgba.assign(static_cast<size_t>(width) * height * 4, 0);
++	for (int y = 0; y < entry.bboxHeight; ++y) {
++		const int dstY = entry.bboxY + y;
++		for (int x = 0; x < entry.bboxWidth; ++x) {
++			const int dstX = entry.bboxX + x;
++			const size_t src = (static_cast<size_t>(y) * decoded.width + x) * 4;
++			const size_t dst = (static_cast<size_t>(dstY) * width + dstX) * 4;
++			const size_t pixel1x = static_cast<size_t>(dstY / HdPackScale) * frame.width + dstX / HdPackScale;
++			unsigned alpha = allowed[pixel1x] != 0 ? decoded.rgba[src + 3] : 0;
++			if (!alpha1x.empty())
++				alpha = (alpha * alpha1x[pixel1x] + 127) / 255;
++			for (int c = 0; c < 3; ++c)
++				result.rgba[dst + c] = static_cast<uint8_t>((decoded.rgba[src + c] * alpha + 127) / 255);
++			result.rgba[dst + 3] = static_cast<uint8_t>(alpha);
++		}
++	}
++	return result;
++}
++
++std::optional<HdImage> LoadHdImage(const HdPackEntry &entry, const HdIndexedFrame &frame,
++    std::span<const uint8_t> alpha1x, std::string *error)
++{
++	const std::optional<std::vector<uint8_t>> data = ReadWholeFile(entry.path);
++	if (!data) {
++		SetError(error, "cannot read " + entry.path);
++		return std::nullopt;
++	}
++	const std::optional<HdImage> decoded = DecodeWebp(*data);
++	if (!decoded) {
++		SetError(error, "not a WebP image: " + entry.path);
++		return std::nullopt;
++	}
++	return ComposeHdImage(entry, *decoded, frame, alpha1x, error);
++}
++
++} // namespace devilution
+diff --git a/Source/engine/render/gl1/gl1_hd_pack.hpp b/Source/engine/render/gl1/gl1_hd_pack.hpp
+new file mode 100644
+index 0000000..cde13a6
+--- /dev/null
++++ b/Source/engine/render/gl1/gl1_hd_pack.hpp
+@@ -0,0 +1,180 @@
++/**
++ * @file gl1_hd_pack.hpp
++ *
++ * HD texture packs: index, image loading and the texture memory budget.
++ *
++ * Nothing here calls OpenGL, so all of it is unit tested without a GL context.
++ * The pack format is documented in docs/hd-pack-format.md.
++ */
++#pragma once
++
++#include <cstddef>
++#include <cstdint>
++#include <list>
++#include <optional>
++#include <span>
++#include <string>
++#include <string_view>
++#include <unordered_map>
++#include <utility>
++#include <vector>
++
++#include "engine/render/gl1/gl1_hd_key.hpp"
++
++namespace devilution {
++
++/** @brief The only scale HD packs are made at. */
++constexpr int HdPackScale = 4;
++
++struct HdKeyHash {
++	size_t operator()(const HdKey &key) const noexcept
++	{
++		// The key is a cryptographic hash, so any 8 of its bytes are well distributed.
++		size_t result = 0;
++		for (size_t i = 0; i < sizeof(size_t); ++i)
++			result = (result << 8) | key[i];
++		return result;
++	}
++};
++
++/** @brief One frame of an HD pack. */
++struct HdPackEntry {
++	/** Image file (WebP). */
++	std::string path;
++	/** Size of the original 1x frame. */
++	uint16_t width = 0;
++	uint16_t height = 0;
++	/** Where the image goes in the HD canvas (`width * HdPackScale` by `height * HdPackScale`). */
++	int bboxX = 0;
++	int bboxY = 0;
++	int bboxWidth = 0;
++	int bboxHeight = 0;
++};
++
++/** @brief Maps frame keys to HD images, from every `manifest.json` below the pack directories. */
++class HdPackIndex {
++public:
++	/**
++	 * @brief Adds every pack (subdirectory) of `packsRoot`, in alphabetical order.
++	 * A key found in an earlier pack wins.
++	 */
++	void AddPacksIn(const std::string &packsRoot);
++
++	/** @brief Adds one pack directory. */
++	void AddPack(const std::string &packDir);
++
++	/**
++	 * @brief Adds the frames of one manifest. Image paths are relative to `baseDir`.
++	 * @return Number of frames added, or nullopt if the manifest is invalid.
++	 */
++	std::optional<size_t> AddManifest(std::string_view json, const std::string &baseDir, std::string *error = nullptr);
++
++	[[nodiscard]] const HdPackEntry *Find(const HdKey &key) const;
++	[[nodiscard]] size_t size() const { return entries_.size(); }
++	[[nodiscard]] bool empty() const { return entries_.empty(); }
++	void Clear() { entries_.clear(); }
++
++private:
++	std::unordered_map<HdKey, HdPackEntry, HdKeyHash> entries_;
++};
++
++/** @brief A decoded HD image: premultiplied RGBA, `HdPackScale` times the 1x frame size. */
++struct HdImage {
++	int width = 0;
++	int height = 0;
++	std::vector<uint8_t> rgba;
++};
++
++/** @brief Decodes a WebP image into straight-alpha RGBA. */
++std::optional<HdImage> DecodeWebp(std::span<const uint8_t> data);
++
++/**
++ * @brief Builds the HD texture for a frame from a decoded pack image.
++ *
++ * The image is placed into an empty canvas at the entry's bounding box. Its alpha is then
++ * limited to the 1x silhouette dilated by one 1x pixel, so upscaling halos never leave the
++ * area where the 1x sprite is clickable, multiplied by `alpha1x` (per 1x pixel, 255 = keep;
++ * used for the blended parts of masked tiles; empty = none), and premultiplied.
++ *
++ * @return nullopt if the image or the box does not match the frame.
++ */
++std::optional<HdImage> ComposeHdImage(const HdPackEntry &entry, const HdImage &decoded,
++    const HdIndexedFrame &frame, std::span<const uint8_t> alpha1x, std::string *error = nullptr);
++
++/** @brief Reads, decodes and composes the image of `entry`. */
++std::optional<HdImage> LoadHdImage(const HdPackEntry &entry, const HdIndexedFrame &frame,
++    std::span<const uint8_t> alpha1x, std::string *error = nullptr);
++
++/**
++ * @brief Least-recently-used accounting for a memory budget.
++ *
++ * The owner calls `Touch` whenever an item is used and `TakeEvictions` to learn which items
++ * to free. The most recently used item is never evicted, even if it alone exceeds the budget.
++ */
++template <typename Key, typename Hash = std::hash<Key>>
++class HdLru {
++public:
++	explicit HdLru(size_t budgetBytes = 0)
++	    : budget_(budgetBytes)
++	{
++	}
++
++	void SetBudget(size_t budgetBytes) { budget_ = budgetBytes; }
++	[[nodiscard]] size_t budget() const { return budget_; }
++	[[nodiscard]] size_t usedBytes() const { return used_; }
++	[[nodiscard]] size_t size() const { return order_.size(); }
++	[[nodiscard]] bool Contains(const Key &key) const { return items_.contains(key); }
++
++	/** @brief Marks `key` as most recently used, adding it with `bytes` if new. */
++	void Touch(const Key &key, size_t bytes)
++	{
++		auto it = items_.find(key);
++		if (it != items_.end()) {
++			order_.splice(order_.begin(), order_, it->second);
++			return;
++		}
++		order_.emplace_front(key, bytes);
++		items_.emplace(key, order_.begin());
++		used_ += bytes;
++	}
++
++	void Remove(const Key &key)
++	{
++		auto it = items_.find(key);
++		if (it == items_.end())
++			return;
++		used_ -= it->second->second;
++		order_.erase(it->second);
++		items_.erase(it);
++	}
++
++	/** @brief Removes least recently used items until the total fits the budget. */
++	std::vector<Key> TakeEvictions()
++	{
++		std::vector<Key> evicted;
++		while (used_ > budget_ && order_.size() > 1) {
++			const auto &[key, bytes] = order_.back();
++			evicted.push_back(key);
++			used_ -= bytes;
++			items_.erase(key);
++			order_.pop_back();
++		}
++		return evicted;
++	}
++
++	void Clear()
++	{
++		order_.clear();
++		items_.clear();
++		used_ = 0;
++	}
++
++private:
++	using Order = std::list<std::pair<Key, size_t>>;
++	Order order_;
++	std::unordered_map<Key, typename Order::iterator, Hash> items_;
++	size_t budget_;
++	size_t used_ = 0;
++};
++
++} // namespace devilution
+diff --git a/Source/engine/render/gl1/gl1_renderer.cpp b/Source/engine/render/gl1/gl1_renderer.cpp
+index 72c9cd9..b586e17 100644
+--- a/Source/engine/render/gl1/gl1_renderer.cpp
++++ b/Source/engine/render/gl1/gl1_renderer.cpp
+@@ -182,6 +182,42 @@ constexpr float TileLightBrightness[16] = {
+ 	0.000f, // Level 15: fully dark
+ };
+ 
++/**
++ * @brief Draws a cached sprite or tile texture at its 1x size.
++ *
++ * HD textures hold premultiplied alpha, so they blend with GL_ONE and the vertex colour's
++ * RGB is scaled by its alpha.
++ */
++void DrawCachedTexture(const Gl1CachedTexture &tex, int x, int y)
++{
++	if (!tex.hd) {
++		DrawTexturedQuad(tex.textureId, x, y, tex.width, tex.height);
++		return;
++	}
++	GLfloat color[4];
++	glGetFloatv(GL_CURRENT_COLOR, color);
++	glColor4f(color[0] * color[3], color[1] * color[3], color[2] * color[3], color[3]);
++	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
++	DrawTexturedQuad(tex.textureId, x, y, tex.width, tex.height);
++	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
++	glColor4fv(color);
++}
++
++/** @brief Brightness of a tile drawn with the light table `tbl` (nullptr = fully lit). */
++float TileBrightness(const uint8_t *tbl)
++{
++	uint8_t lightLevel = 0;
++	if (tbl != nullptr) {
++		for (size_t i = 0; i < NumLightingLevels; i++) {
++			if (tbl == LightTables[i].data()) {
++				lightLevel = static_cast<uint8_t>(i);
++				break;
++			}
++		}
++	}
++	return TileLightBrightness[std::min<uint8_t>(lightLevel, 15)];
++}
++
+ void SetVertexLighting(uint8_t lightLevel)
+ {
+ 	float brightness = SpriteLightBrightness[std::min<uint8_t>(lightLevel, 15)];
+@@ -570,7 +606,7 @@ void Gl1DrawClx(Point position, ClxSprite clx)
+ 	int y = position.y - clx.height() + 1;
+ 	EnsureFrameBegun();
+ 	glColor4f(1, 1, 1, 1);
+-	DrawTexturedQuad(tex.textureId, x, y, tex.width, tex.height);
++	DrawCachedTexture(tex, x, y);
+ }
+ 
+ void Gl1DrawClxTRN(Point position, ClxSprite clx, const uint8_t *trn)
+@@ -580,7 +616,7 @@ void Gl1DrawClxTRN(Point position, ClxSprite clx, const uint8_t *trn)
+ 	int y = position.y - clx.height() + 1;
+ 	EnsureFrameBegun();
+ 	glColor4f(1, 1, 1, 1);
+-	DrawTexturedQuad(tex.textureId, x, y, tex.width, tex.height);
++	DrawCachedTexture(tex, x, y);
+ }
+ 
+ void Gl1DrawClxBlended(Point position, ClxSprite clx)
+@@ -590,7 +626,7 @@ void Gl1DrawClxBlended(Point position, ClxSprite clx)
+ 	int y = position.y - clx.height() + 1;
+ 	EnsureFrameBegun();
+ 	glColor4f(1, 1, 1, 0.5f);
+-	DrawTexturedQuad(tex.textureId, x, y, tex.width, tex.height);
++	DrawCachedTexture(tex, x, y);
+ 	glColor4f(1, 1, 1, 1);
+ }
+ 
+@@ -601,7 +637,7 @@ void Gl1DrawClxBlendedTRN(Point position, ClxSprite clx, const uint8_t *trn)
+ 	int y = position.y - clx.height() + 1;
+ 	EnsureFrameBegun();
+ 	glColor4f(1, 1, 1, 0.5f);
+-	DrawTexturedQuad(tex.textureId, x, y, tex.width, tex.height);
++	DrawCachedTexture(tex, x, y);
+ 	glColor4f(1, 1, 1, 1);
+ }
+ 
+@@ -612,7 +648,7 @@ void Gl1DrawClxWithLight(Point position, ClxSprite clx, uint8_t lightLevel)
+ 	int y = position.y - clx.height() + 1;
+ 	EnsureFrameBegun();
+ 	SetVertexLighting(lightLevel);
+-	DrawTexturedQuad(tex.textureId, x, y, tex.width, tex.height);
++	DrawCachedTexture(tex, x, y);
+ 	glColor4f(1, 1, 1, 1);
+ }
+ 
+@@ -624,7 +660,7 @@ void Gl1DrawClxWithLightBlended(Point position, ClxSprite clx, uint8_t lightLeve
+ 	EnsureFrameBegun();
+ 	float brightness = SpriteLightBrightness[std::min<uint8_t>(lightLevel, 15)];
+ 	glColor4f(brightness, brightness, brightness, 0.5f);
+-	DrawTexturedQuad(tex.textureId, x, y, tex.width, tex.height);
++	DrawCachedTexture(tex, x, y);
+ 	glColor4f(1, 1, 1, 1);
+ }
+ 
+@@ -639,17 +675,7 @@ void Gl1DrawTile(Point position, TileType tileType, const uint8_t *src, int_fast
+ 		// Vertex lighting: texture is unlit, vertex color darkens it.
+ 		auto &tex = textureCache.GetTileTexture(src, tileType, maskType, height);
+ 
+-		// Derive light level from tbl pointer by comparing against LightTables.
+-		uint8_t lightLevel = 0;
+-		if (tbl != nullptr) {
+-			for (size_t i = 0; i < NumLightingLevels; i++) {
+-				if (tbl == LightTables[i].data()) {
+-					lightLevel = static_cast<uint8_t>(i);
+-					break;
+-				}
+-			}
+-		}
+-		float brightness = TileLightBrightness[std::min<uint8_t>(lightLevel, 15)];
++		const float brightness = TileBrightness(tbl);
+ 		if (maskType == MaskType::Transparent) {
+ 			glColor4f(brightness, brightness, brightness, 0.5f);
+ 		} else {
+@@ -657,21 +683,19 @@ void Gl1DrawTile(Point position, TileType tileType, const uint8_t *src, int_fast
+ 		}
+ 		int x = position.x;
+ 		int y = position.y - static_cast<int>(tex.height) + 1;
+-		DrawTexturedQuad(tex.textureId, x, y, tex.width, tex.height);
++		DrawCachedTexture(tex, x, y);
+ 		glColor4f(1, 1, 1, 1);
+ 	} else {
+ 		// Pixel lighting: light table baked into the texture at upload time.
++		// HD textures are unlit, so they are darkened by the vertex colour instead.
+ 		auto &tex = textureCache.GetTileTexture(src, tileType, maskType, height, tbl);
+ 
+-		if (maskType == MaskType::Transparent) {
+-			glColor4f(1, 1, 1, 0.5f);
+-		}
++		const float brightness = tex.hd ? TileBrightness(tbl) : 1.0f;
++		glColor4f(brightness, brightness, brightness, maskType == MaskType::Transparent ? 0.5f : 1.0f);
+ 		int x = position.x;
+ 		int y = position.y - static_cast<int>(tex.height) + 1;
+-		DrawTexturedQuad(tex.textureId, x, y, tex.width, tex.height);
+-		if (maskType == MaskType::Transparent) {
+-			glColor4f(1, 1, 1, 1);
+-		}
++		DrawCachedTexture(tex, x, y);
++		glColor4f(1, 1, 1, 1);
+ 	}
+ }
+ 
+diff --git a/Source/engine/render/gl1/gl1_texture_cache.cpp b/Source/engine/render/gl1/gl1_texture_cache.cpp
+index b7d0247..16b3653 100644
+--- a/Source/engine/render/gl1/gl1_texture_cache.cpp
++++ b/Source/engine/render/gl1/gl1_texture_cache.cpp
+@@ -14,7 +14,11 @@
+ #include "engine/palette.h"
+ #include "engine/render/dun_render.hpp"
+ #include "levels/dun_tile.hpp"
++#include "levels/gendung.h"
++#include "options.h"
+ #include "utils/clx_decode.hpp"
++#include "utils/log.hpp"
++#include "utils/paths.h"
+ 
+ namespace devilution {
+ 
+@@ -92,8 +96,33 @@ uint8_t GetTilePixelAlpha(MaskType maskType, TileType tileType, int x, int buffe
+ 	}
+ }
+ 
++/**
++ * @brief Palette indices that colour cycling animates on the current level.
++ * HD textures cannot follow the animation, so frames using them stay 1x.
++ */
++HdAnimatedRange CurrentAnimatedRange()
++{
++	if (!*GetOptions().Graphics.colorCycling)
++		return {};
++	switch (leveltype) {
++	case DTYPE_CAVES:
++	case DTYPE_HELL:
++	case DTYPE_CRYPT:
++		return { 1, 31 };
++	case DTYPE_NEST:
++		return { 1, 15 };
++	default:
++		return {};
++	}
++}
++
+ } // namespace
+ 
++bool Gl1TextureCache::HdTexturesEnabled()
++{
++	return *GetOptions().Graphics.hdTextures;
++}
++
+ Gl1CachedTexture &Gl1TextureCache::GetSpriteTexture(ClxSprite clx, const uint8_t *trn)
+ {
+ 	FlushIfNeeded();
+@@ -101,6 +130,10 @@ Gl1CachedTexture &Gl1TextureCache::GetSpriteTexture(ClxSprite clx, const uint8_t
+ 	auto it = spriteCache_.find(key);
+ 	if (it != spriteCache_.end()) {
+ 		Gl1CachedTexture &entry = it->second;
++		if (entry.hd) {
++			TouchHd(entry.hdKey, 0);
++			return entry;
++		}
+ 		if (!entry.needsPaletteUpdate || entry.paletteGeneration == paletteGeneration_) {
+ 			return entry;
+ 		}
+@@ -117,6 +150,11 @@ Gl1CachedTexture &Gl1TextureCache::GetSpriteTexture(ClxSprite clx, const uint8_t
+ 	}
+ 
+ 	Gl1CachedTexture &entry = spriteCache_[key];
++	if (HdTexturesEnabled() || hdDumper_.enabled()) {
++		const HdDumpInfo dumpInfo { "sprite", -1, trn != nullptr, static_cast<int>(leveltype) };
++		if (TryUseHd(DecodeClxToIndexed(clx, trn), HdSpriteVariant, {}, dumpInfo, entry))
++			return entry;
++	}
+ 	std::vector<uint8_t> rgbaData;
+ 	bool hasAnimatedPalette = false;
+ 	DecodeClxToRgba(clx, trn, rgbaData, hasAnimatedPalette);
+@@ -137,6 +175,10 @@ Gl1CachedTexture &Gl1TextureCache::GetTileTexture(const uint8_t *frameData,
+ 	auto it = tileCache_.find(key);
+ 	if (it != tileCache_.end()) {
+ 		Gl1CachedTexture &entry = it->second;
++		if (entry.hd) {
++			TouchHd(entry.hdKey, 0);
++			return entry;
++		}
+ 		if (!entry.needsPaletteUpdate || entry.paletteGeneration == paletteGeneration_) {
+ 			return entry;
+ 		}
+@@ -154,6 +196,23 @@ Gl1CachedTexture &Gl1TextureCache::GetTileTexture(const uint8_t *frameData,
+ 	}
+ 
+ 	Gl1CachedTexture &entry = tileCache_[key];
++	if (HdTexturesEnabled() || hdDumper_.enabled()) {
++		// The HD texture is unlit (the light table is applied as a vertex colour when drawing).
++		const HdIndexedFrame frame = DecodeDunTileToIndexed(frameData, tileType, static_cast<int>(height));
++		std::vector<uint8_t> alpha1x;
++		uint8_t variant = static_cast<uint8_t>(MaskType::Solid);
++		if (maskType == MaskType::Left || maskType == MaskType::Right) {
++			variant = static_cast<uint8_t>(maskType);
++			alpha1x.resize(frame.pixels.size());
++			for (int y = 0; y < frame.height; ++y) {
++				for (int x = 0; x < frame.width; ++x)
++					alpha1x[static_cast<size_t>(y) * frame.width + x] = GetTilePixelAlpha(maskType, tileType, x, y, frame.height);
++			}
++		}
++		const HdDumpInfo dumpInfo { "tile", static_cast<int>(tileType), false, static_cast<int>(leveltype) };
++		if (TryUseHd(frame, variant, alpha1x, dumpInfo, entry))
++			return entry;
++	}
+ 	std::vector<uint8_t> rgbaData;
+ 	uint16_t outWidth = 0;
+ 	uint16_t outHeight = 0;
+@@ -472,20 +531,22 @@ void Gl1TextureCache::FlushIfNeeded()
+ 	if (!fullClearPending_)
+ 		return;
+ 	fullClearPending_ = false;
+-	Clear();
++	ClearPaletteDependent();
++	if (!HdTexturesEnabled())
++		ReleaseHd();
+ }
+ 
+-void Gl1TextureCache::Clear()
++void Gl1TextureCache::ClearPaletteDependent()
+ {
+ 	for (auto &[key, entry] : spriteCache_) {
+-		if (entry.textureId != 0) {
++		if (entry.textureId != 0 && !entry.hd) {
+ 			glDeleteTextures(1, &entry.textureId);
+ 		}
+ 	}
+ 	spriteCache_.clear();
+ 
+ 	for (auto &[key, entry] : tileCache_) {
+-		if (entry.textureId != 0) {
++		if (entry.textureId != 0 && !entry.hd) {
+ 			glDeleteTextures(1, &entry.textureId);
+ 		}
+ 	}
+@@ -494,6 +555,109 @@ void Gl1TextureCache::Clear()
+ 	paletteGeneration_ = 0;
+ }
+ 
++void Gl1TextureCache::Clear()
++{
++	ClearPaletteDependent();
++	ReleaseHd();
++}
++
++bool Gl1TextureCache::TryUseHd(const HdIndexedFrame &frame, uint8_t variant, std::span<const uint8_t> alpha1x,
++    const HdDumpInfo &dumpInfo, Gl1CachedTexture &entry)
++{
++	const HdKey key = ComputeHdKey(frame);
++	if (hdDumper_.enabled())
++		hdDumper_.Dump(key, frame, logical_palette, dumpInfo);
++	if (!HdTexturesEnabled())
++		return false;
++	if (UsesAnimatedIndices(frame, CurrentAnimatedRange())) {
++		++hdAnimatedSkipped_;
++		return false;
++	}
++	if (!hdIndexLoaded_) {
++		hdIndexLoaded_ = true;
++		const std::string packsRoot = paths::PrefPath() + "hd";
++		hdIndex_.AddPacksIn(packsRoot);
++		LogInfo("HD textures: {} frames in {}", hdIndex_.size(), packsRoot);
++	}
++
++	const Gl1HdTextureKey hdKey { key, variant };
++	auto it = hdTextures_.find(hdKey);
++	if (it == hdTextures_.end()) {
++		const HdPackEntry *packEntry = hdIndex_.Find(key);
++		if (packEntry == nullptr || hdFailed_.contains(hdKey))
++			return false;
++		std::string error;
++		const std::optional<HdImage> image = LoadHdImage(*packEntry, frame, alpha1x, &error);
++		if (!image) {
++			hdFailed_.insert(hdKey);
++			LogWarn("HD texture {} not used: {}", HdKeyToHex(key), error);
++			return false;
++		}
++		uint32_t textureId = 0;
++		glGenTextures(1, &textureId);
++		glBindTexture(GL_TEXTURE_2D, textureId);
++		size_t bytes = image->rgba.size();
++#ifdef GL_GENERATE_MIPMAP
++		// HD textures are usually drawn smaller than their 4x size.
++		glTexParameteri(GL_TEXTURE_2D, GL_GENERATE_MIPMAP, GL_TRUE);
++		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
++		bytes += bytes / 3;
++#else
++		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
++#endif
++		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
++		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
++		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
++		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image->width, image->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image->rgba.data());
++		hdTextures_.emplace(hdKey, textureId);
++		TouchHd(hdKey, bytes);
++	} else {
++		TouchHd(hdKey, 0);
++	}
++
++	entry.textureId = hdTextures_.at(hdKey);
++	entry.width = frame.width;
++	entry.height = frame.height;
++	entry.needsPaletteUpdate = false;
++	entry.paletteGeneration = paletteGeneration_;
++	entry.hd = true;
++	entry.hdKey = hdKey;
++	return true;
++}
++
++void Gl1TextureCache::TouchHd(const Gl1HdTextureKey &key, size_t bytes)
++{
++	hdLru_.SetBudget(static_cast<size_t>(*GetOptions().Graphics.hdTextureMemory) * 1024 * 1024);
++	hdLru_.Touch(key, bytes);
++	for (const Gl1HdTextureKey &evicted : hdLru_.TakeEvictions()) {
++		const auto it = hdTextures_.find(evicted);
++		if (it == hdTextures_.end())
++			continue;
++		glDeleteTextures(1, &it->second);
++		hdTextures_.erase(it);
++		const auto usesEvicted = [&evicted](const auto &item) { return item.second.hd && item.second.hdKey == evicted; };
++		std::erase_if(spriteCache_, usesEvicted);
++		std::erase_if(tileCache_, usesEvicted);
++	}
++}
++
++void Gl1TextureCache::ReleaseHd()
++{
++	std::erase_if(spriteCache_, [](const auto &item) { return item.second.hd; });
++	std::erase_if(tileCache_, [](const auto &item) { return item.second.hd; });
++	for (auto &[key, textureId] : hdTextures_)
++		glDeleteTextures(1, &textureId);
++	hdTextures_.clear();
++	hdLru_.Clear();
++	hdIndex_.Clear();
++	hdIndexLoaded_ = false;
++	hdFailed_.clear();
++	if (hdAnimatedSkipped_ != 0) {
++		LogVerbose("HD textures: {} frames kept at 1x because of colour cycling", hdAnimatedSkipped_);
++		hdAnimatedSkipped_ = 0;
++	}
++}
++
+ } // namespace devilution
+ 
+ #endif // DEVILUTIONX_GL1_RENDERER
+\ No newline at end of file
+diff --git a/Source/engine/render/gl1/gl1_texture_cache.h b/Source/engine/render/gl1/gl1_texture_cache.h
+index b818fc0..a147357 100644
+--- a/Source/engine/render/gl1/gl1_texture_cache.h
++++ b/Source/engine/render/gl1/gl1_texture_cache.h
+@@ -11,14 +11,38 @@
+ #ifdef DEVILUTIONX_GL1_RENDERER
+ 
+ #include <cstdint>
++#include <span>
++#include <string>
+ #include <unordered_map>
++#include <unordered_set>
+ #include <vector>
+ 
+ #include "engine/clx_sprite.hpp"
+ #include "engine/render/dun_render.hpp"
++#include "engine/render/gl1/gl1_hd_dump.hpp"
++#include "engine/render/gl1/gl1_hd_pack.hpp"
+ 
+ namespace devilution {
+ 
++/**
++ * @brief An HD texture: the frame key plus the tile mask (`HdSpriteVariant` for sprites).
++ */
++struct Gl1HdTextureKey {
++	HdKey key;
++	uint8_t variant;
++
++	bool operator==(const Gl1HdTextureKey &other) const = default;
++};
++
++constexpr uint8_t HdSpriteVariant = 0xFF;
++
++struct Gl1HdTextureKeyHash {
++	size_t operator()(const Gl1HdTextureKey &key) const noexcept
++	{
++		return HdKeyHash {}(key.key) ^ key.variant;
++	}
++};
++
+ /**
+  * @brief A cached OpenGL texture with metadata.
+  */
+@@ -30,6 +54,12 @@ struct Gl1CachedTexture {
+ 	bool needsPaletteUpdate = false;
+ 	/** The palette generation at which this texture was last uploaded. */
+ 	uint32_t paletteGeneration = 0;
++	/**
++	 * If true, `textureId` is an HD texture (premultiplied alpha, `HdPackScale` times the size)
++	 * owned by the HD store. `width` and `height` stay the 1x size, which is the size drawn.
++	 */
++	bool hd = false;
++	Gl1HdTextureKey hdKey {};
+ };
+ 
+ /**
+@@ -131,10 +161,15 @@ public:
+ 	void FlushIfNeeded();
+ 
+ 	/**
+-	 * @brief Delete all GL textures and clear the cache.
++	 * @brief Delete all GL textures, including HD textures, and clear the cache.
+ 	 */
+ 	void Clear();
+ 
++	/**
++	 * @brief Whether the sprite and tile cache misses look up HD packs (option "HD Textures").
++	 */
++	[[nodiscard]] static bool HdTexturesEnabled();
++
+ 	/**
+ 	 * @brief Get the current palette generation counter.
+ 	 */
+@@ -186,6 +221,34 @@ private:
+ 	 */
+ 	void UploadTexture(Gl1CachedTexture &entry, uint16_t width, uint16_t height, const uint8_t *rgbaData);
+ 
++	/** @brief Delete the cached 1x textures; HD textures stay loaded. */
++	void ClearPaletteDependent();
++
++	/**
++	 * @brief Dump the frame (dump mode) and, if HD textures are on, point `entry` at its
++	 * HD texture.
++	 * @param alpha1x Per-pixel alpha of the 1x frame (masked tiles), empty for sprites.
++	 * @return true if `entry` now uses an HD texture.
++	 */
++	bool TryUseHd(const HdIndexedFrame &frame, uint8_t variant, std::span<const uint8_t> alpha1x,
++	    const HdDumpInfo &dumpInfo, Gl1CachedTexture &entry);
++
++	/** @brief Mark an HD texture as used and free least recently used ones over the budget. */
++	void TouchHd(const Gl1HdTextureKey &key, size_t bytes);
++
++	/** @brief Delete every HD texture and forget the pack index. */
++	void ReleaseHd();
++
++	std::unordered_map<Gl1HdTextureKey, uint32_t, Gl1HdTextureKeyHash> hdTextures_;
++	HdLru<Gl1HdTextureKey, Gl1HdTextureKeyHash> hdLru_;
++	HdPackIndex hdIndex_;
++	bool hdIndexLoaded_ = false;
++	/** Keys whose HD image failed to load (logged once, not retried). */
++	std::unordered_set<Gl1HdTextureKey, Gl1HdTextureKeyHash> hdFailed_;
++	/** Frames kept at 1x because colour cycling animates them. */
++	size_t hdAnimatedSkipped_ = 0;
++	HdDumper hdDumper_ { HdDumper::DirFromEnvironment() };
++
+ 	std::unordered_map<Gl1SpriteCacheKey, Gl1CachedTexture, Gl1SpriteCacheKeyHash> spriteCache_;
+ 	std::unordered_map<Gl1TileCacheKey, Gl1CachedTexture, Gl1TileCacheKeyHash> tileCache_;
+ 	uint32_t paletteGeneration_ = 0;
+diff --git a/Source/options.cpp b/Source/options.cpp
+index 065c6e8..5217a54 100644
+--- a/Source/options.cpp
++++ b/Source/options.cpp
+@@ -851,6 +851,10 @@ GraphicsOptions::GraphicsOptions()
+                                                                                                                                 { LightingMode::Tile, N_("Tile") },
+                                                                                                                                 { LightingMode::TileSmooth, N_("Tile Smooth") },
+                                                                                                                             })
++#ifdef DEVILUTIONX_GL1_RENDERER
++    , hdTextures("HD Textures", OptionEntryFlags::None, N_("HD Textures"), N_("Replace sprites and tiles with upscaled images from the HD packs in the hd folder. OpenGL renderer only."), false)
++    , hdTextureMemory("HD Texture Memory MB", OptionEntryFlags::None, N_("HD Texture Memory"), N_("Video memory for HD textures, in MB. The least recently drawn are freed first."), 1024, { 256, 512, 1024, 2048, 4096 })
++#endif
+     , colorCycling("Color Cycling", OptionEntryFlags::None, N_("Color Cycling"), N_("Color cycling effect used for water, lava, and acid animation."), true)
+     , alternateNestArt("Alternate nest art", OptionEntryFlags::OnlyHellfire | OptionEntryFlags::CantChangeInGame, N_("Alternate nest art"), N_("The game will use an alternative palette for Hellfire’s nest tileset."), false)
+ #if SDL_VERSION_ATLEAST(2, 0, 0)
+@@ -889,6 +893,8 @@ std::vector<OptionEntryBase *> GraphicsOptions::GetEntries()
+ 		&showFPS,
+ #ifdef DEVILUTIONX_GL1_RENDERER
+ 		&lightingMode,
++		&hdTextures,
++		&hdTextureMemory,
+ #else
+ 		&perPixelLighting,
+ #endif
+diff --git a/Source/options.h b/Source/options.h
+index 50bb121..a3e794b 100644
+--- a/Source/options.h
++++ b/Source/options.h
+@@ -571,6 +571,12 @@ struct GraphicsOptions : OptionCategoryBase {
+ #endif
+ 	/** @brief Lighting quality mode. */
+ 	OptionEntryEnum<LightingMode> lightingMode;
++#ifdef DEVILUTIONX_GL1_RENDERER
++	/** @brief Replace sprites and tiles with images from HD packs (OpenGL renderer). */
++	OptionEntryBoolean hdTextures;
++	/** @brief Video memory budget for HD textures, in MB. */
++	OptionEntryInt<int> hdTextureMemory;
++#endif
+ 	/** @brief Enable color cycling animations. */
+ 	OptionEntryBoolean colorCycling;
+ 	/** @brief Use alternate nest palette. */
+diff --git a/Translations/ru.po b/Translations/ru.po
+index fbe3af6..ebfaf23 100644
+--- a/Translations/ru.po
++++ b/Translations/ru.po
+@@ -4391,6 +4391,62 @@ msgstr "Попиксельное освещение"
+ msgid "Subtile lighting for smoother light gradients."
+ msgstr "Тонкое освещение для более плавных световых градиентов."
+ 
++#: Source/options.cpp
++msgid "Renderer"
++msgstr "Рендерер"
++
++#: Source/options.cpp
++msgid "Rendering backend to use."
++msgstr "Способ отрисовки графики."
++
++#: Source/options.cpp
++msgid "Auto"
++msgstr "Авто"
++
++#: Source/options.cpp
++msgid "OpenGL"
++msgstr "OpenGL"
++
++#: Source/options.cpp
++msgid "Software"
++msgstr "Программный"
++
++#: Source/options.cpp
++msgid "Lighting"
++msgstr "Освещение"
++
++#: Source/options.cpp
++msgid "Lighting quality mode."
++msgstr "Качество освещения."
++
++#: Source/options.cpp
++msgid "Vertex"
++msgstr "По вершинам"
++
++#: Source/options.cpp
++msgid "Tile"
++msgstr "По плиткам"
++
++#: Source/options.cpp
++msgid "Tile Smooth"
++msgstr "По плиткам, плавное"
++
++#: Source/options.cpp
++msgid "HD Textures"
++msgstr "HD-текстуры"
++
++#: Source/options.cpp
++msgid "Replace sprites and tiles with upscaled images from the HD packs in the hd folder. OpenGL renderer only."
++msgstr "Заменяет спрайты и плитки увеличенными изображениями из HD-паков в папке hd. Только с рендерером OpenGL."
++
++#: Source/options.cpp
++msgid "HD Texture Memory"
++msgstr "Память для HD-текстур"
++
++#: Source/options.cpp
++msgid "Video memory for HD textures, in MB. The least recently drawn are freed first."
++msgstr "Видеопамять для HD-текстур, в МБ. Первыми освобождаются те, что давно не отрисовывались."
++
+ #: Source/options.cpp:792
+ msgid "Color Cycling"
+ msgstr "Цветовой цикл"
+diff --git a/test/Fixtures.cmake b/test/Fixtures.cmake
+index 203c21e..96e20ce 100644
+--- a/test/Fixtures.cmake
++++ b/test/Fixtures.cmake
+@@ -93,6 +93,7 @@ set(devilutionx_fixtures
+   txtdata/lf.tsv
+   txtdata/lf_no_trail.tsv
+   txtdata/sample.tsv
++  hd_pack/key_vectors.json
+   txtdata/utf8_bom.tsv
+ )
+ 
+diff --git a/test/fixtures/hd_pack/key_vectors.json b/test/fixtures/hd_pack/key_vectors.json
+new file mode 100644
+index 0000000..fa6ffd2
+--- /dev/null
++++ b/test/fixtures/hd_pack/key_vectors.json
+@@ -0,0 +1,9 @@
++[
++  {"name": "single opaque pixel, index 0", "width": 1, "height": 1, "pixels": [0], "sha256": "86a2e77f630bfd5d859765889fa297e3893e9fb4dd2011242116fdfc48aabfcd"},
++  {"name": "single transparent pixel", "width": 1, "height": 1, "pixels": [256], "sha256": "4be4656d02d7d66839900d55b06fd34b9b09c3c0c2c39466ff29ebc0bb85b300"},
++  {"name": "2x1 opaque", "width": 2, "height": 1, "pixels": [1, 255], "sha256": "d4cb931f0e28cd89f3648bc51f9f2439afd1dc867f3e2cb3d6d70c7bf6d2e428"},
++  {"name": "1x2 opaque, same bytes as 2x1", "width": 1, "height": 2, "pixels": [1, 255], "sha256": "7e31bd854ae018f2464de3e0affd1117b5d72c66db895bafc709492d0e2bc7a7"},
++  {"name": "3x2 mixed", "width": 3, "height": 2, "pixels": [256, 200, 256, 17, 128, 31], "sha256": "4747c40687be5d62a9a919e72da5c00f1f107544f5008ed9a94cb6560075fae3"},
++  {"name": "4x4 gradient", "width": 4, "height": 4, "pixels": [240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255], "sha256": "db44402b1ef910ba9105bd8bca36ec99c8ea18ca278157d7821a242c0750bf97"},
++  {"name": "8x3 with transparency", "width": 8, "height": 3, "pixels": [256, 31, 62, 256, 124, 155, 256, 217, 7, 38, 256, 100, 131, 256, 193, 224, 14, 256, 76, 107, 256, 169, 200, 256], "sha256": "2ea54edec2a62e4ff1d439751d83c3781ab4d74428056dd8871422d48e0df72e"}
++]
+diff --git a/test/hd_key_test.cpp b/test/hd_key_test.cpp
+new file mode 100644
+index 0000000..dbba79e
+--- /dev/null
++++ b/test/hd_key_test.cpp
+@@ -0,0 +1,225 @@
++#include <array>
++#include <cstdint>
++#include <fstream>
++#include <iterator>
++#include <string>
++#include <vector>
++
++#include <gtest/gtest.h>
++
++#include "engine/render/gl1/gl1_hd_json.hpp"
++#include "engine/render/gl1/gl1_hd_key.hpp"
++#include "utils/clx_encode.hpp"
++#include "utils/paths.h"
++
++namespace devilution {
++namespace {
++
++constexpr uint16_t T = HdTransparentPixel;
++
++HdIndexedFrame MakeFrame(uint16_t width, uint16_t height, std::vector<uint16_t> pixels)
++{
++	HdIndexedFrame frame;
++	frame.width = width;
++	frame.height = height;
++	frame.pixels = std::move(pixels);
++	return frame;
++}
++
++/** @brief Encodes a top-down indexed image (with `T` for transparent) as one CLX frame. */
++std::vector<uint8_t> EncodeClx(const HdIndexedFrame &frame)
++{
++	std::vector<uint8_t> out(ClxFrameHeaderSize);
++	out[0] = ClxFrameHeaderSize;
++	out[2] = static_cast<uint8_t>(frame.width);
++	out[3] = static_cast<uint8_t>(frame.width >> 8);
++	out[4] = static_cast<uint8_t>(frame.height);
++	out[5] = static_cast<uint8_t>(frame.height >> 8);
++	for (int y = frame.height - 1; y >= 0; --y) {
++		int x = 0;
++		while (x < frame.width) {
++			const int start = x;
++			if (!frame.IsOpaque(x, y)) {
++				while (x < frame.width && !frame.IsOpaque(x, y))
++					++x;
++				AppendClxTransparentRun(x - start, out);
++				continue;
++			}
++			std::vector<uint8_t> run;
++			while (x < frame.width && frame.IsOpaque(x, y))
++				run.push_back(static_cast<uint8_t>(frame.pixels[static_cast<size_t>(y) * frame.width + x++]));
++			AppendClxPixelsOrFillRun(run.data(), run.size(), out);
++		}
++	}
++	return out;
++}
++
++TEST(HdKeyTest, MatchesKeyVectors)
++{
++	std::ifstream file(paths::BasePath() + "test/fixtures/hd_pack/key_vectors.json", std::ios::binary);
++	ASSERT_TRUE(file.is_open());
++	const std::string text { std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>() };
++	std::string error;
++	const std::optional<HdJsonValue> vectors = ParseHdJson(text, &error);
++	ASSERT_TRUE(vectors.has_value()) << error;
++	ASSERT_TRUE(vectors->IsArray());
++	ASSERT_GE(vectors->AsArray().size(), 5U);
++	for (const HdJsonValue &vector : vectors->AsArray()) {
++		HdIndexedFrame frame;
++		frame.width = static_cast<uint16_t>(*vector.GetInt("width", 1, 65535));
++		frame.height = static_cast<uint16_t>(*vector.GetInt("height", 1, 65535));
++		for (const HdJsonValue &pixel : vector.Find("pixels")->AsArray())
++			frame.pixels.push_back(static_cast<uint16_t>(pixel.AsNumber()));
++		EXPECT_EQ(HdKeyToHex(ComputeHdKey(frame)), *vector.GetString("sha256")) << *vector.GetString("name");
++	}
++}
++
++TEST(HdKeyTest, IsDeterministicAndContentSensitive)
++{
++	const HdIndexedFrame base = MakeFrame(3, 2, { T, 200, T, 17, 128, 31 });
++	const HdKey key = ComputeHdKey(base);
++	EXPECT_EQ(ComputeHdKey(base), key);
++
++	HdIndexedFrame changedPixel = base;
++	changedPixel.pixels[4] = 129;
++	EXPECT_NE(ComputeHdKey(changedPixel), key);
++
++	HdIndexedFrame transparentVsZero = base;
++	transparentVsZero.pixels[0] = 0;
++	EXPECT_NE(ComputeHdKey(transparentVsZero), key);
++
++	const HdIndexedFrame transposedSize = MakeFrame(2, 3, base.pixels);
++	EXPECT_NE(ComputeHdKey(transposedSize), key);
++}
++
++TEST(HdKeyTest, HexRoundTrip)
++{
++	const HdKey key = ComputeHdKey(MakeFrame(1, 1, { 42 }));
++	const std::string hex = HdKeyToHex(key);
++	ASSERT_EQ(hex.size(), 64U);
++	EXPECT_EQ(HdKeyFromHex(hex), key);
++
++	std::string upper = hex;
++	for (char &c : upper)
++		c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
++	EXPECT_EQ(HdKeyFromHex(upper), key);
++
++	EXPECT_FALSE(HdKeyFromHex(hex.substr(1)).has_value());
++	EXPECT_FALSE(HdKeyFromHex(hex.substr(0, 63) + "g").has_value());
++}
++
++TEST(HdKeyTest, DecodesClxSprite)
++{
++	const HdIndexedFrame image = MakeFrame(5, 3, {
++	                                                 T, 10, 10, 10, T,  // top row
++	                                                 1, 2, 3, 4, 5,     //
++	                                                 T, T, 250, T, T,   // bottom row
++	                                             });
++	const std::vector<uint8_t> clxData = EncodeClx(image);
++	const ClxSprite clx { clxData.data(), static_cast<uint32_t>(clxData.size()) };
++
++	const HdIndexedFrame decoded = DecodeClxToIndexed(clx, nullptr);
++	EXPECT_EQ(decoded.width, 5);
++	EXPECT_EQ(decoded.height, 3);
++	EXPECT_EQ(decoded.pixels, image.pixels);
++	EXPECT_EQ(ComputeHdKey(decoded), ComputeHdKey(image));
++}
++
++TEST(HdKeyTest, TrnIsAppliedBeforeHashing)
++{
++	const HdIndexedFrame image = MakeFrame(2, 2, { 1, T, 2, 3 });
++	const std::vector<uint8_t> clxData = EncodeClx(image);
++	const ClxSprite clx { clxData.data(), static_cast<uint32_t>(clxData.size()) };
++
++	std::array<uint8_t, 256> identity;
++	for (size_t i = 0; i < identity.size(); ++i)
++		identity[i] = static_cast<uint8_t>(i);
++	EXPECT_EQ(ComputeHdKey(DecodeClxToIndexed(clx, identity.data())), ComputeHdKey(image));
++
++	std::array<uint8_t, 256> recolour = identity;
++	recolour[2] = 200;
++	const HdIndexedFrame recoloured = DecodeClxToIndexed(clx, recolour.data());
++	EXPECT_EQ(recoloured.pixels, (std::vector<uint16_t> { 1, T, 200, 3 }));
++	EXPECT_NE(ComputeHdKey(recoloured), ComputeHdKey(image));
++}
++
++TEST(HdKeyTest, DecodesSquareTile)
++{
++	std::vector<uint8_t> data(32 * 32);
++	for (size_t i = 0; i < data.size(); ++i)
++		data[i] = static_cast<uint8_t>(i / 32); // stored bottom row first
++	const HdIndexedFrame tile = DecodeDunTileToIndexed(data.data(), TileType::Square, 32);
++	ASSERT_EQ(tile.width, 32);
++	ASSERT_EQ(tile.height, 32);
++	EXPECT_EQ(tile.pixels[0], 31);             // top-left: last stored row
++	EXPECT_EQ(tile.pixels[31 * 32 + 5], 0);    // bottom row: first stored row
++}
++
++TEST(HdKeyTest, DecodesLeftTriangleShape)
++{
++	// 16 lower rows of width 2,4,...,32, then 15 upper rows of width 30,...,2.
++	std::vector<uint8_t> data;
++	for (int i = 0; i < 16; ++i)
++		data.insert(data.end(), 2 * (i + 1), 7);
++	for (int i = 0; i < 15; ++i)
++		data.insert(data.end(), 32 - 2 * (i + 1), 9);
++	const HdIndexedFrame tile = DecodeDunTileToIndexed(data.data(), TileType::LeftTriangle, 31);
++	ASSERT_EQ(tile.height, 31);
++
++	// Bottom row: only the two rightmost pixels.
++	EXPECT_FALSE(tile.IsOpaque(29, 30));
++	EXPECT_EQ(tile.pixels[30 * 32 + 30], 7);
++	EXPECT_EQ(tile.pixels[30 * 32 + 31], 7);
++	// Middle row (the widest): all 32 pixels.
++	EXPECT_EQ(tile.pixels[15 * 32 + 0], 7);
++	// Top row: two pixels starting at x = 30.
++	EXPECT_FALSE(tile.IsOpaque(29, 0));
++	EXPECT_EQ(tile.pixels[30], 9);
++
++	size_t opaque = 0;
++	for (const uint16_t pixel : tile.pixels)
++		opaque += pixel != T ? 1 : 0;
++	EXPECT_EQ(opaque, data.size());
++}
++
++TEST(HdKeyTest, DecodesTransparentSquareRuns)
++{
++	// Every row: 10 transparent, 4 pixels, 18 transparent.
++	std::vector<uint8_t> data;
++	for (int row = 0; row < 32; ++row) {
++		data.push_back(static_cast<uint8_t>(-10));
++		data.push_back(4);
++		data.insert(data.end(), { 1, 2, 3, 4 });
++		data.push_back(static_cast<uint8_t>(-18));
++	}
++	const HdIndexedFrame tile = DecodeDunTileToIndexed(data.data(), TileType::TransparentSquare, 32);
++	for (int y = 0; y < 32; ++y) {
++		EXPECT_FALSE(tile.IsOpaque(9, y));
++		EXPECT_EQ(tile.pixels[static_cast<size_t>(y) * 32 + 10], 1);
++		EXPECT_EQ(tile.pixels[static_cast<size_t>(y) * 32 + 13], 4);
++		EXPECT_FALSE(tile.IsOpaque(14, y));
++	}
++}
++
++TEST(HdKeyTest, SpriteAndTileWithSamePixelsShareTheKey)
++{
++	// Keys only depend on the decoded pixels; a tile and a sprite never have the same
++	// pixels in practice, and packs built from dumps carry the right key either way.
++	std::vector<uint8_t> data(32 * 32, 5);
++	const HdIndexedFrame tile = DecodeDunTileToIndexed(data.data(), TileType::Square, 32);
++	const std::vector<uint8_t> clxData = EncodeClx(tile);
++	const ClxSprite clx { clxData.data(), static_cast<uint32_t>(clxData.size()) };
++	EXPECT_EQ(ComputeHdKey(DecodeClxToIndexed(clx, nullptr)), ComputeHdKey(tile));
++}
++
++TEST(HdKeyTest, AnimatedIndices)
++{
++	const HdIndexedFrame frame = MakeFrame(3, 1, { T, 40, 12 });
++	EXPECT_TRUE(UsesAnimatedIndices(frame, { 1, 31 }));
++	EXPECT_FALSE(UsesAnimatedIndices(frame, { 1, 8 }));
++	EXPECT_FALSE(UsesAnimatedIndices(frame, {})); // town: nothing cycles
++	EXPECT_FALSE(UsesAnimatedIndices(MakeFrame(1, 1, { T }), { 0, 255 })); // transparent never counts
++}
++
++} // namespace
++} // namespace devilution
+diff --git a/test/hd_pack_test.cpp b/test/hd_pack_test.cpp
+new file mode 100644
+index 0000000..de6cfe3
+--- /dev/null
++++ b/test/hd_pack_test.cpp
+@@ -0,0 +1,444 @@
++#include <cstdint>
++#include <cstdio>
++#include <filesystem>
++#include <fstream>
++#include <iterator>
++#include <string>
++#include <vector>
++
++#include <gtest/gtest.h>
++#include <webp/encode.h>
++#include <webp/types.h>
++
++#include "engine/render/gl1/gl1_hd_dump.hpp"
++#include "engine/render/gl1/gl1_hd_json.hpp"
++#include "engine/render/gl1/gl1_hd_key.hpp"
++#include "engine/render/gl1/gl1_hd_pack.hpp"
++#include "utils/png.h"
++#include "utils/sdl_compat.h"
++
++namespace devilution {
++namespace {
++
++namespace fs = std::filesystem;
++
++constexpr uint16_t T = HdTransparentPixel;
++constexpr int S = HdPackScale;
++
++HdIndexedFrame MakeFrame(uint16_t width, uint16_t height, std::vector<uint16_t> pixels)
++{
++	HdIndexedFrame frame;
++	frame.width = width;
++	frame.height = height;
++	frame.pixels = std::move(pixels);
++	return frame;
++}
++
++/** @brief A straight-alpha RGBA image filled with one colour. */
++HdImage SolidImage(int width, int height, uint8_t r, uint8_t g, uint8_t b, uint8_t a)
++{
++	HdImage image;
++	image.width = width;
++	image.height = height;
++	for (int i = 0; i < width * height; ++i)
++		image.rgba.insert(image.rgba.end(), { r, g, b, a });
++	return image;
++}
++
++std::vector<uint8_t> EncodeWebpLossless(const HdImage &image)
++{
++	uint8_t *output = nullptr;
++	const size_t size = WebPEncodeLosslessRGBA(image.rgba.data(), image.width, image.height, image.width * 4, &output);
++	std::vector<uint8_t> result(output, output + size);
++	WebPFree(output);
++	return result;
++}
++
++void WriteFile(const fs::path &path, const void *data, size_t size)
++{
++	fs::create_directories(path.parent_path());
++	std::ofstream out(path, std::ios::binary);
++	out.write(static_cast<const char *>(data), static_cast<std::streamsize>(size));
++}
++
++void WriteFile(const fs::path &path, const std::string &text)
++{
++	WriteFile(path, text.data(), text.size());
++}
++
++std::string ReadFile(const fs::path &path)
++{
++	std::ifstream in(path, std::ios::binary);
++	return { std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>() };
++}
++
++std::string ManifestJson(const std::string &framesJson, int scale = S)
++{
++	return R"({"asset": "test/synthetic.clx", "archive": "none", "scale": )" + std::to_string(scale)
++	    + R"(, "frames": [)" + framesJson + "]}";
++}
++
++std::string FrameJson(const HdIndexedFrame &frame, const std::string &file, const std::string &extra = "")
++{
++	return R"({"group": 0, "frame": 0, "width": )" + std::to_string(frame.width)
++	    + R"(, "height": )" + std::to_string(frame.height)
++	    + R"(, "sha256": ")" + HdKeyToHex(ComputeHdKey(frame))
++	    + R"(", "file": ")" + file + "\"" + extra + "}";
++}
++
++class HdPackTest : public ::testing::Test {
++protected:
++	void SetUp() override
++	{
++		root_ = fs::temp_directory_path() / ("dvx_hd_pack_test_" + std::string(::testing::UnitTest::GetInstance()->current_test_info()->name()));
++		fs::remove_all(root_);
++		fs::create_directories(root_);
++	}
++
++	void TearDown() override
++	{
++		fs::remove_all(root_);
++	}
++
++	fs::path root_;
++};
++
++// --- JSON ---
++
++TEST(HdJsonTest, ParsesDocument)
++{
++	std::string error;
++	const std::optional<HdJsonValue> value = ParseHdJson(
++	    R"( {"a": [1, -2.5e1, true, false, null], "s": "x\"\\\/\né😀", "o": {}} )", &error);
++	ASSERT_TRUE(value.has_value()) << error;
++	const HdJsonValue &a = *value->Find("a");
++	ASSERT_EQ(a.AsArray().size(), 5U);
++	EXPECT_EQ(a.AsArray()[0].AsNumber(), 1);
++	EXPECT_EQ(a.AsArray()[1].AsNumber(), -25);
++	EXPECT_TRUE(a.AsArray()[2].AsBool());
++	EXPECT_EQ(a.AsArray()[4].type(), HdJsonValue::Type::Null);
++	EXPECT_EQ(*value->GetString("s"), "x\"\\/\n\xC3\xA9\xF0\x9F\x98\x80");
++	EXPECT_TRUE(value->Find("o")->IsObject());
++	EXPECT_EQ(value->Find("missing"), nullptr);
++}
++
++TEST(HdJsonTest, GetIntChecksRangeAndWholeNumbers)
++{
++	const std::optional<HdJsonValue> value = ParseHdJson(R"({"a": 4, "b": 4.5, "c": "4", "d": 100})");
++	ASSERT_TRUE(value.has_value());
++	EXPECT_EQ(value->GetInt("a", 0, 10), 4);
++	EXPECT_FALSE(value->GetInt("b", 0, 10).has_value());
++	EXPECT_FALSE(value->GetInt("c", 0, 10).has_value());
++	EXPECT_FALSE(value->GetInt("d", 0, 10).has_value());
++}
++
++TEST(HdJsonTest, RejectsInvalidDocuments)
++{
++	for (const char *text : { "", "{", R"({"a" 1})", "[1,]", "[1 2]", R"("\x")", "01", "1.", "tru", "[] []", R"("\ud800")" }) {
++		std::string error;
++		EXPECT_FALSE(ParseHdJson(text, &error).has_value()) << text;
++		EXPECT_FALSE(error.empty()) << text;
++	}
++	std::string deep(100, '[');
++	deep += std::string(100, ']');
++	EXPECT_FALSE(ParseHdJson(deep).has_value());
++}
++
++// --- Index ---
++
++TEST(HdPackIndexTest, AddsFramesFromManifest)
++{
++	const HdIndexedFrame a = MakeFrame(2, 1, { 1, 2 });
++	const HdIndexedFrame b = MakeFrame(1, 1, { 3 });
++	HdPackIndex index;
++	std::string error;
++	const std::optional<size_t> added = index.AddManifest(
++	    ManifestJson(FrameJson(a, "0_0.webp") + "," + FrameJson(b, "sub/0_1.webp", R"(, "bbox": [1, 2, 3, 2])")),
++	    "base", &error);
++	ASSERT_EQ(added, 2U) << error;
++
++	const HdPackEntry *entryA = index.Find(ComputeHdKey(a));
++	ASSERT_NE(entryA, nullptr);
++	EXPECT_EQ(entryA->path, "base" DIRECTORY_SEPARATOR_STR "0_0.webp");
++	EXPECT_EQ(entryA->width, 2);
++	EXPECT_EQ(entryA->bboxWidth, 2 * S);
++	EXPECT_EQ(entryA->bboxHeight, 1 * S);
++
++	const HdPackEntry *entryB = index.Find(ComputeHdKey(b));
++	ASSERT_NE(entryB, nullptr);
++	EXPECT_EQ(entryB->path, "base" DIRECTORY_SEPARATOR_STR "sub" DIRECTORY_SEPARATOR_STR "0_1.webp");
++	EXPECT_EQ(entryB->bboxX, 1);
++	EXPECT_EQ(entryB->bboxY, 2);
++	EXPECT_EQ(entryB->bboxWidth, 3);
++	EXPECT_EQ(entryB->bboxHeight, 2);
++
++	EXPECT_EQ(index.Find(ComputeHdKey(MakeFrame(1, 1, { 4 }))), nullptr);
++}
++
++TEST(HdPackIndexTest, OnlyScale4IsAccepted)
++{
++	const HdIndexedFrame a = MakeFrame(1, 1, { 1 });
++	HdPackIndex index;
++	std::string error;
++	EXPECT_FALSE(index.AddManifest(ManifestJson(FrameJson(a, "a.webp"), 2), "base", &error).has_value());
++	EXPECT_FALSE(error.empty());
++	EXPECT_TRUE(index.empty());
++}
++
++TEST(HdPackIndexTest, SkipsUnsafeOrIncompleteFrames)
++{
++	HdPackIndex index;
++	const auto frame = [](uint16_t i) { return MakeFrame(1, 1, { i }); };
++	const std::string frames = FrameJson(frame(1), "../escape.webp") + ","
++	    + FrameJson(frame(2), "/abs.webp") + ","
++	    + FrameJson(frame(3), "a\\\\b.webp") + ","
++	    + FrameJson(frame(4), "a//b.webp") + ","
++	    + R"({"width": 1, "height": 1, "sha256": "zz", "file": "x.webp"},)"
++	    + R"({"width": 1, "height": 1, "file": "x.webp"},)"
++	    + FrameJson(frame(5), "ok.webp", R"(, "bbox": [0, 0, 4])");
++	EXPECT_EQ(index.AddManifest(ManifestJson(frames), "base"), 0U);
++}
++
++TEST_F(HdPackTest, EarlierPackWins)
++{
++	const HdIndexedFrame a = MakeFrame(1, 1, { 1 });
++	WriteFile(root_ / "a-pack" / "monsters" / "manifest.json", ManifestJson(FrameJson(a, "first.webp")));
++	WriteFile(root_ / "b-pack" / "manifest.json", ManifestJson(FrameJson(a, "second.webp")));
++	HdPackIndex index;
++	index.AddPacksIn(root_.string());
++	const HdPackEntry *entry = index.Find(ComputeHdKey(a));
++	ASSERT_NE(entry, nullptr);
++	EXPECT_EQ(fs::path(entry->path), root_ / "a-pack" / "monsters" / "first.webp");
++}
++
++// --- Images ---
++
++TEST(HdImageTest, ComposeKeepsOpaqueInteriorAndPremultiplies)
++{
++	// One opaque 1x pixel in the middle of a 3x3 frame.
++	const HdIndexedFrame frame = MakeFrame(3, 3, { T, T, T, T, 9, T, T, T, T });
++	HdPackEntry entry;
++	entry.width = 3;
++	entry.height = 3;
++	entry.bboxWidth = 3 * S;
++	entry.bboxHeight = 3 * S;
++	const HdImage decoded = SolidImage(3 * S, 3 * S, 200, 100, 50, 128);
++
++	std::string error;
++	const std::optional<HdImage> image = ComposeHdImage(entry, decoded, frame, {}, &error);
++	ASSERT_TRUE(image.has_value()) << error;
++	ASSERT_EQ(image->width, 3 * S);
++	// The dilated silhouette covers the whole 3x3 frame, so every pixel keeps alpha 128.
++	for (size_t i = 0; i < image->rgba.size(); i += 4) {
++		EXPECT_EQ(image->rgba[i + 0], (200 * 128 + 127) / 255);
++		EXPECT_EQ(image->rgba[i + 1], (100 * 128 + 127) / 255);
++		EXPECT_EQ(image->rgba[i + 2], (50 * 128 + 127) / 255);
++		EXPECT_EQ(image->rgba[i + 3], 128);
++	}
++}
++
++TEST(HdImageTest, AlphaIsClampedToDilatedSilhouette)
++{
++	// 5x1 frame, only pixel 0 opaque: the dilated silhouette is pixels 0 and 1.
++	const HdIndexedFrame frame = MakeFrame(5, 1, { 9, T, T, T, T });
++	HdPackEntry entry;
++	entry.width = 5;
++	entry.height = 1;
++	entry.bboxWidth = 5 * S;
++	entry.bboxHeight = 1 * S;
++	const std::optional<HdImage> image = ComposeHdImage(entry, SolidImage(5 * S, S, 255, 255, 255, 255), frame, {});
++	ASSERT_TRUE(image.has_value());
++	for (int y = 0; y < S; ++y) {
++		for (int x = 0; x < 5 * S; ++x) {
++			const uint8_t alpha = image->rgba[(static_cast<size_t>(y) * 5 * S + x) * 4 + 3];
++			EXPECT_EQ(alpha, x < 2 * S ? 255 : 0) << x << "," << y;
++		}
++	}
++}
++
++TEST(HdImageTest, BboxPlacesCroppedImage)
++{
++	const HdIndexedFrame frame = MakeFrame(2, 2, { 1, 1, 1, 1 });
++	HdPackEntry entry;
++	entry.width = 2;
++	entry.height = 2;
++	entry.bboxX = 3;
++	entry.bboxY = 5;
++	entry.bboxWidth = 2;
++	entry.bboxHeight = 1;
++	const std::optional<HdImage> image = ComposeHdImage(entry, SolidImage(2, 1, 10, 20, 30, 255), frame, {});
++	ASSERT_TRUE(image.has_value());
++	for (int y = 0; y < 2 * S; ++y) {
++		for (int x = 0; x < 2 * S; ++x) {
++			const bool inside = x >= 3 && x < 5 && y == 5;
++			EXPECT_EQ(image->rgba[(static_cast<size_t>(y) * 2 * S + x) * 4 + 3], inside ? 255 : 0) << x << "," << y;
++		}
++	}
++}
++
++TEST(HdImageTest, Alpha1xMultipliesPerSourcePixel)
++{
++	const HdIndexedFrame frame = MakeFrame(2, 1, { 1, 1 });
++	HdPackEntry entry;
++	entry.width = 2;
++	entry.height = 1;
++	entry.bboxWidth = 2 * S;
++	entry.bboxHeight = S;
++	const std::vector<uint8_t> alpha1x { 255, 128 };
++	const std::optional<HdImage> image = ComposeHdImage(entry, SolidImage(2 * S, S, 255, 0, 0, 255), frame, alpha1x);
++	ASSERT_TRUE(image.has_value());
++	EXPECT_EQ(image->rgba[3], 255);
++	EXPECT_EQ(image->rgba[(S + 1) * 4 + 3], 128);
++	EXPECT_EQ(image->rgba[(S + 1) * 4 + 0], 128); // premultiplied red
++}
++
++TEST(HdImageTest, RejectsMismatchedSizes)
++{
++	const HdIndexedFrame frame = MakeFrame(2, 2, { 1, 1, 1, 1 });
++	HdPackEntry entry;
++	entry.width = 2;
++	entry.height = 2;
++	entry.bboxWidth = 2 * S;
++	entry.bboxHeight = 2 * S;
++	std::string error;
++	EXPECT_FALSE(ComposeHdImage(entry, SolidImage(2 * S - 1, 2 * S, 0, 0, 0, 255), frame, {}, &error).has_value());
++	EXPECT_FALSE(error.empty());
++
++	HdPackEntry wrongFrame = entry;
++	wrongFrame.width = 3;
++	EXPECT_FALSE(ComposeHdImage(wrongFrame, SolidImage(2 * S, 2 * S, 0, 0, 0, 255), frame, {}).has_value());
++
++	HdPackEntry outside = entry;
++	outside.bboxX = 1;
++	EXPECT_FALSE(ComposeHdImage(outside, SolidImage(2 * S, 2 * S, 0, 0, 0, 255), frame, {}).has_value());
++}
++
++TEST(HdImageTest, DecodesWebp)
++{
++	HdImage image = SolidImage(3, 2, 1, 2, 3, 255);
++	image.rgba[4 * 4 + 3] = 0;
++	const std::vector<uint8_t> webp = EncodeWebpLossless(image);
++	const std::optional<HdImage> decoded = DecodeWebp(webp);
++	ASSERT_TRUE(decoded.has_value());
++	EXPECT_EQ(decoded->width, 3);
++	EXPECT_EQ(decoded->height, 2);
++	EXPECT_EQ(decoded->rgba[0], 1);
++	EXPECT_EQ(decoded->rgba[4 * 4 + 3], 0);
++
++	const std::vector<uint8_t> garbage { 'R', 'I', 'F', 'F', 0, 0, 0, 0 };
++	EXPECT_FALSE(DecodeWebp(garbage).has_value());
++}
++
++TEST_F(HdPackTest, LoadsImageFromPack)
++{
++	const HdIndexedFrame frame = MakeFrame(2, 1, { 7, 8 });
++	WriteFile(root_ / "pack" / "a" / "manifest.json", ManifestJson(FrameJson(frame, "img/0_0.webp")));
++	const std::vector<uint8_t> webp = EncodeWebpLossless(SolidImage(2 * S, S, 40, 80, 120, 255));
++	WriteFile(root_ / "pack" / "a" / "img" / "0_0.webp", webp.data(), webp.size());
++
++	HdPackIndex index;
++	index.AddPacksIn(root_.string());
++	const HdPackEntry *entry = index.Find(ComputeHdKey(frame));
++	ASSERT_NE(entry, nullptr);
++	std::string error;
++	const std::optional<HdImage> image = LoadHdImage(*entry, frame, {}, &error);
++	ASSERT_TRUE(image.has_value()) << error;
++	EXPECT_EQ(image->width, 2 * S);
++	EXPECT_EQ(image->height, S);
++	EXPECT_EQ(image->rgba[0], 40);
++	EXPECT_EQ(image->rgba[3], 255);
++
++	// A missing file is reported, not fatal.
++	HdPackEntry missing = *entry;
++	missing.path += ".gone";
++	EXPECT_FALSE(LoadHdImage(missing, frame, {}, &error).has_value());
++}
++
++// --- Memory budget ---
++
++TEST(HdLruTest, EvictsLeastRecentlyUsedFirst)
++{
++	HdLru<int> lru(300);
++	lru.Touch(1, 100);
++	lru.Touch(2, 100);
++	lru.Touch(3, 100);
++	EXPECT_TRUE(lru.TakeEvictions().empty());
++	lru.Touch(1, 100); // 2 is now the least recently used
++	lru.Touch(4, 100);
++	EXPECT_EQ(lru.TakeEvictions(), (std::vector<int> { 2 }));
++	EXPECT_EQ(lru.usedBytes(), 300U);
++	lru.Touch(5, 150);
++	EXPECT_EQ(lru.TakeEvictions(), (std::vector<int> { 3, 1 }));
++	EXPECT_EQ(lru.usedBytes(), 250U);
++	EXPECT_FALSE(lru.Contains(1));
++	EXPECT_TRUE(lru.Contains(4));
++}
++
++TEST(HdLruTest, NeverEvictsTheMostRecentItem)
++{
++	HdLru<int> lru(100);
++	lru.Touch(1, 50);
++	lru.Touch(2, 500);
++	EXPECT_EQ(lru.TakeEvictions(), (std::vector<int> { 1 }));
++	EXPECT_TRUE(lru.Contains(2));
++	lru.Remove(2);
++	EXPECT_EQ(lru.usedBytes(), 0U);
++}
++
++// --- Dump mode ---
++
++TEST_F(HdPackTest, DumpRoundTrip)
++{
++	std::array<SDL_Color, 256> palette {};
++	for (int i = 0; i < 256; ++i)
++		palette[i] = SDL_Color { static_cast<Uint8>(i), static_cast<Uint8>(255 - i), static_cast<Uint8>(i / 2), 255 };
++	const HdIndexedFrame frame = MakeFrame(3, 2, { T, 10, 20, 30, 40, T });
++	const HdKey key = ComputeHdKey(frame);
++	const std::string hex = HdKeyToHex(key);
++
++	HdDumper dumper((root_ / "dump").string());
++	ASSERT_TRUE(dumper.enabled());
++	ASSERT_TRUE(dumper.Dump(key, frame, palette, { "sprite", -1, false, 1 }));
++	EXPECT_FALSE(dumper.Dump(key, frame, palette, { "sprite", -1, false, 1 })) << "each key is dumped once";
++
++	const fs::path png = root_ / "dump" / "1x" / hex.substr(0, 2) / (hex + ".png");
++	ASSERT_TRUE(fs::exists(png));
++	EXPECT_EQ(ReadFile(root_ / "dump" / "manifest.tsv"),
++	    "key\tkind\twidth\theight\ttile_type\ttrn\tlevel_type\n" + hex + "\tsprite\t3\t2\t-1\tnone\t1\n");
++
++	// Read the dumped 1x frame back, upscale it 4x (nearest neighbour) and pack it.
++	SDL_Surface *loaded = LoadPNG(png.string().c_str());
++	ASSERT_NE(loaded, nullptr);
++	SDL_Surface *rgba = SDL_ConvertSurfaceFormat(loaded, SDL_PIXELFORMAT_RGBA32, 0);
++	SDL_FreeSurface(loaded);
++	ASSERT_NE(rgba, nullptr);
++	ASSERT_EQ(rgba->w, 3);
++	ASSERT_EQ(rgba->h, 2);
++	HdImage upscaled;
++	upscaled.width = 3 * S;
++	upscaled.height = 2 * S;
++	for (int y = 0; y < 2 * S; ++y) {
++		const auto *row = static_cast<const uint8_t *>(rgba->pixels) + static_cast<ptrdiff_t>(y / S) * rgba->pitch;
++		for (int x = 0; x < 3 * S; ++x)
++			upscaled.rgba.insert(upscaled.rgba.end(), row + (x / S) * 4, row + (x / S) * 4 + 4);
++	}
++	SDL_FreeSurface(rgba);
++	EXPECT_EQ(upscaled.rgba[(static_cast<size_t>(0) * 3 * S + S) * 4 + 0], palette[10].r);
++	EXPECT_EQ(upscaled.rgba[3], 0); // transparent 1x pixel stays transparent
++
++	const std::vector<uint8_t> webp = EncodeWebpLossless(upscaled);
++	WriteFile(root_ / "packs" / "test" / "manifest.json",
++	    ManifestJson(R"({"width": 3, "height": 2, "sha256": ")" + hex + R"(", "file": "f.webp"})"));
++	WriteFile(root_ / "packs" / "test" / "f.webp", webp.data(), webp.size());
++
++	HdPackIndex index;
++	index.AddPacksIn((root_ / "packs").string());
++	const HdPackEntry *entry = index.Find(key);
++	ASSERT_NE(entry, nullptr);
++	const std::optional<HdImage> image = LoadHdImage(*entry, frame, {});
++	ASSERT_TRUE(image.has_value());
++	EXPECT_EQ(image->rgba[(static_cast<size_t>(S) * 3 * S + 0) * 4 + 1], palette[30].g);
++}
++
++} // namespace
++} // namespace devilution
