@@ -768,7 +768,7 @@ bool SpawnWindow(const char *lpWindowName)
 	// On SDL2, the DPI scaling factor is only known once the renderer exists.
 	// On HiDPI displays, "Fit to Screen" with "Integer Scaling" depends on it,
 	// so apply the preferred size again. This does not recreate the renderer.
-	if (renderer != nullptr && *GetOptions().Graphics.fitToScreen && *GetOptions().Graphics.integerScaling
+	if (GetRenderer().HasPresentationLayer() && *GetOptions().Graphics.fitToScreen && *GetOptions().Graphics.integerScaling
 	    && GetDpiScalingFactor() > 1.0F) {
 		const Size currentSize { gnScreenWidth, gnScreenHeight };
 		const Size preferredSize = GetPreferredWindowSize();

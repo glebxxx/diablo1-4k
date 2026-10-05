@@ -180,6 +180,7 @@ mark_as_advanced(DEVILUTIONX_PALETTE_TRANSPARENCY_BLACK_16_LUT)
 option(DISABLE_DEMOMODE "Disable demo mode support" OFF)
 option(DISCORD_INTEGRATION "Build with Discord SDK for rich presence support" OFF)
 option(SCREEN_READER_INTEGRATION "Build with screen reader support" OFF)
+option(DEVILUTIONX_GL1_RENDERER "Build the OpenGL 1.x rendering backend" OFF)
 mark_as_advanced(SCREEN_READER_INTEGRATION)
 
 # If both UNPACKED_MPQS and UNPACKED_SAVES are enabled, we completely remove MPQ support.

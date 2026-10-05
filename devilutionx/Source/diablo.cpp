@@ -110,6 +110,7 @@
 #include "utils/paths.h"
 #include "utils/screen_reader.hpp"
 #include "utils/sdl_compat.h"
+#include "utils/sdl_thread.h"
 #include "utils/status_macros.hpp"
 #include "utils/str_cat.hpp"
 

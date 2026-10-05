@@ -20,7 +20,7 @@
 #include <algorithm>
 #include <vector>
 
-#include <GL/gl.h>
+#include "engine/render/gl1/gl1_gl.h"
 
 #ifdef USE_SDL3
 #include <SDL3/SDL_log.h>

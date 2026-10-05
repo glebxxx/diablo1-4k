@@ -8,7 +8,7 @@
 
 #include "engine/render/gl1/gl1_texture_cache.h"
 
-#include <GL/gl.h>
+#include "engine/render/gl1/gl1_gl.h"
 #include <cstring>
 
 #include "engine/palette.h"

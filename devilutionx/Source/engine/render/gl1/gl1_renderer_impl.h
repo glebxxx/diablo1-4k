@@ -13,7 +13,7 @@
 #include <cstring>
 #include <vector>
 
-#include <GL/gl.h>
+#include "engine/render/gl1/gl1_gl.h"
 
 #include "appfat.h"
 #include "diablo.h"

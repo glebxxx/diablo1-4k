@@ -63,11 +63,28 @@ namespace devilution {
 #ifndef DEFAULT_AUDIO_RESAMPLING_QUALITY
 #define DEFAULT_AUDIO_RESAMPLING_QUALITY 3
 #endif
+#ifndef DEFAULT_PER_PIXEL_LIGHTING
+#define DEFAULT_PER_PIXEL_LIGHTING true
+#endif
 #ifndef DEFAULT_LIGHTING_MODE
+#ifdef DEVILUTIONX_GL1_RENDERER
 #define DEFAULT_LIGHTING_MODE LightingMode::Tile
+#else
+#define DEFAULT_LIGHTING_MODE (DEFAULT_PER_PIXEL_LIGHTING ? LightingMode::TileSmooth : LightingMode::Tile)
+#endif
 #endif
 
 namespace {
+
+#ifndef DEVILUTIONX_GL1_RENDERER
+/** Without the OpenGL renderer, `Per-pixel Lighting` stays the ini setting and selects the lighting mode. */
+void SyncLightingModeWithPerPixelLighting()
+{
+	GraphicsOptions &graphics = GetOptions().Graphics;
+	graphics.lightingMode.SetValue(*graphics.perPixelLighting ? LightingMode::TileSmooth : LightingMode::Tile);
+}
+
+#endif
 
 void DiscoverMods()
 {
@@ -228,6 +245,9 @@ void LoadOptions()
 			pEntry->LoadFromIni(pCategory->GetKey());
 		}
 	}
+#ifndef DEVILUTIONX_GL1_RENDERER
+	SyncLightingModeWithPerPixelLighting();
+#endif
 
 	ini->getUtf8Buf("Hellfire", "SItem", options.Hellfire.szItem, sizeof(options.Hellfire.szItem));
 	ini->getUtf8Buf("Network", "Bind Address", "0.0.0.0", options.Network.szBindAddress, sizeof(options.Network.szBindAddress));
@@ -823,6 +843,9 @@ GraphicsOptions::GraphicsOptions()
           })
     , brightness("Brightness Correction", OptionEntryFlags::Invisible, "Brightness Correction", "Brightness correction level.", 0)
     , zoom("Zoom", OptionEntryFlags::None, N_("Zoom"), N_("Zoom on when enabled."), false)
+#ifndef DEVILUTIONX_GL1_RENDERER
+    , perPixelLighting("Per-pixel Lighting", OptionEntryFlags::None, N_("Per-pixel Lighting"), N_("Subtile lighting for smoother light gradients."), DEFAULT_PER_PIXEL_LIGHTING)
+#endif
     , lightingMode("Lighting", OptionEntryFlags::None, N_("Lighting"), N_("Lighting quality mode."), DEFAULT_LIGHTING_MODE, {
                                                                                                                                 { LightingMode::Vertex, N_("Vertex") },
                                                                                                                                 { LightingMode::Tile, N_("Tile") },
@@ -837,12 +860,17 @@ GraphicsOptions::GraphicsOptions()
 #endif
     , showFPS("Show FPS", OptionEntryFlags::None, N_("Show FPS"), N_("Displays the FPS in the upper left corner of the screen."), false)
 {
+#ifndef DEVILUTIONX_GL1_RENDERER
+	perPixelLighting.SetValueChangedCallback(SyncLightingModeWithPerPixelLighting);
+#endif
 }
 std::vector<OptionEntryBase *> GraphicsOptions::GetEntries()
 {
 	// clang-format off
 	return {
+#ifdef DEVILUTIONX_GL1_RENDERER
 		&renderer,
+#endif
 		&resolution,
 #ifndef __vita__
 		&fullscreen,
@@ -859,7 +887,11 @@ std::vector<OptionEntryBase *> GraphicsOptions::GetEntries()
 		&brightness,
 		&zoom,
 		&showFPS,
+#ifdef DEVILUTIONX_GL1_RENDERER
 		&lightingMode,
+#else
+		&perPixelLighting,
+#endif
 		&colorCycling,
 		&alternateNestArt,
 #if SDL_VERSION_ATLEAST(2, 0, 0)

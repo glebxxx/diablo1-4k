@@ -1148,7 +1148,6 @@ if(NOT TARGET_PLATFORM STREQUAL "dos")
   target_link_dependencies(libdevilutionx PUBLIC Threads::Threads)
 endif()
 
-option(DEVILUTIONX_GL1_RENDERER "Build the OpenGL 1.x rendering backend" OFF)
 if(DEVILUTIONX_GL1_RENDERER)
   find_package(OpenGL REQUIRED)
   add_devilutionx_object_library(libdevilutionx_gl1_renderer
@@ -1165,9 +1164,7 @@ if(DEVILUTIONX_GL1_RENDERER)
     libdevilutionx_lighting
   )
   target_link_libraries(libdevilutionx_gl1_renderer PUBLIC OpenGL::GL)
-  target_compile_definitions(libdevilutionx_gl1_renderer PUBLIC DEVILUTIONX_GL1_RENDERER)
   target_link_dependencies(libdevilutionx PUBLIC libdevilutionx_gl1_renderer)
-  target_compile_definitions(libdevilutionx PUBLIC DEVILUTIONX_GL1_RENDERER)
 endif()
 if(DEVILUTIONX_SCREENSHOT_FORMAT STREQUAL DEVILUTIONX_SCREENSHOT_FORMAT_PNG)
   target_link_dependencies(libdevilutionx PUBLIC libdevilutionx_surface_to_png)

@@ -565,6 +565,10 @@ struct GraphicsOptions : OptionCategoryBase {
 	OptionEntryInt<int> brightness;
 	/** @brief Zoom on start. */
 	OptionEntryBoolean zoom;
+#ifndef DEVILUTIONX_GL1_RENDERER
+	/** @brief Subtile lighting for smoother light gradients. Sets `lightingMode` (on: TileSmooth, off: Tile). */
+	OptionEntryBoolean perPixelLighting;
+#endif
 	/** @brief Lighting quality mode. */
 	OptionEntryEnum<LightingMode> lightingMode;
 	/** @brief Enable color cycling animations. */

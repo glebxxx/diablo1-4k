@@ -243,6 +243,11 @@ bool ChangeOptionValue(OptionEntryBase *pOption, size_t listIndex)
 		return false;
 	}
 
+#ifndef DEVILUTIONX_GL1_RENDERER
+	if (pOption == &GetOptions().Graphics.perPixelLighting) {
+		GetRenderer().SetLightingMode(*GetOptions().Graphics.lightingMode);
+	}
+#endif
 	if (pOption == &GetOptions().Graphics.lightingMode) {
 		GetRenderer().SetLightingMode(*GetOptions().Graphics.lightingMode);
 	}
