@@ -1,0 +1,572 @@
+# Width constraints for Russian UI strings, checked by test/ru_text_fit_test.cpp.
+#
+# Columns (tab-separated, one row per place where the string is drawn):
+#   msgid      English source string, exactly as in Translations/ru.po.
+#   msgctxt    Context (empty when the entry has none).
+#   font_size  12, 22, 24, 30, 42 or 46 (GameFont12 ... GameFont46).
+#   spacing    Letter spacing the call site passes (TextRenderOptions::spacing).
+#   max_width  Pixel budget for one line of the string.
+#   fit        no     = drawn as is: every line must be <= max_width.
+#              yes    = drawn with UiFlags::KerningFitSpacing: the spacing that
+#                       AdjustSpacingToFitHorizontally() computes for every line
+#                       must stay >= 0 (glyphs must not overlap).
+#              wrap:N = word-wrapped by WordWrapString(text, max_width, font, spacing):
+#                       at most N lines, every line <= max_width.
+#   source     The call site that draws the string (file:line in Source/).
+#
+# Escaping: in msgid and msgctxt, "\t" is a tab, "\n" a newline and "\\" a backslash.
+# No other escapes are used. Trailing spaces inside a field are significant.
+#
+# Format strings ({}, {:s}, {:d}) are measured with the placeholders drawn literally.
+# Where the argument matters, max_width is already adjusted for it:
+#   max_width = budget - (width(widest argument) - width(placeholder)),
+# both widths measured at the row's font and spacing.
+#
+# Plural entries (msgid_plural) are checked for the msgid, the msgid_plural and every
+# msgstr[n]. Rows are checked for the English msgid too, as a baseline.
+msgid	msgctxt	font_size	spacing	max_width	fit	source
+# Main menu: UiList item_width 510 minus the 42 px FOCUS_BIG selector on both sides; FontSize42, spacing 5.
+Single Player		42	5	426	no	Source/DiabloUI/mainmenu.cpp:53
+Multi Player		42	5	426	no	Source/DiabloUI/mainmenu.cpp:54
+Settings		42	5	426	no	Source/DiabloUI/mainmenu.cpp:55
+Support		42	5	426	no	Source/DiabloUI/mainmenu.cpp:56
+Show Credits		42	5	426	no	Source/DiabloUI/mainmenu.cpp:57
+Exit Hellfire		42	5	426	no	Source/DiabloUI/mainmenu.cpp:59
+Exit Diablo		42	5	426	no	Source/DiabloUI/mainmenu.cpp:59
+# Shareware banner: UiArtText 640 wide, FontSize30, spacing 8.
+Shareware		30	8	640	no	Source/DiabloUI/mainmenu.cpp:76
+# Settings menu title: 640 px at the minimum screen width, FontSize30, spacing 8.
+Settings		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+# Settings list: width uiWidth-100 = 540 at 640 px, minus the 20 px FOCUS_SMALL selector on both sides = 500; FontSize24, spacing 1.
+Bound key:		24	1	500	no	Source/DiabloUI/settingsmenu.cpp:447
+Press any key to change.		24	1	500	no	Source/DiabloUI/settingsmenu.cpp:496
+Unbind key		24	1	500	no	Source/DiabloUI/settingsmenu.cpp:498
+Bound button combo:		24	1	500	no	Source/DiabloUI/settingsmenu.cpp:502
+Unbind button combo		24	1	500	no	Source/DiabloUI/settingsmenu.cpp:511
+Previous Menu		24	1	500	no	Source/DiabloUI/settingsmenu.cpp:555
+# StrCat(msg, " ", seconds left): " 10" is 36 px plus 1 spacing, so 500 - 37.
+Press gamepad buttons to change.		24	1	463	no	Source/DiabloUI/settingsmenu.cpp:170
+# Option categories (options.cpp): a 500 px settings list item and the 640 px settings title.
+Game Mode		24	1	500	no	Source/DiabloUI/settingsmenu.cpp:415
+Game Mode		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Start Up		24	1	500	no	Source/DiabloUI/settingsmenu.cpp:415
+Start Up		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Audio		24	1	500	no	Source/DiabloUI/settingsmenu.cpp:415
+Audio		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Graphics		24	1	500	no	Source/DiabloUI/settingsmenu.cpp:415
+Graphics		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Gameplay		24	1	500	no	Source/DiabloUI/settingsmenu.cpp:415
+Gameplay		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Language		24	1	500	no	Source/DiabloUI/settingsmenu.cpp:415
+Language		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Keymapping		24	1	500	no	Source/DiabloUI/settingsmenu.cpp:415
+Keymapping		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Padmapping		24	1	500	no	Source/DiabloUI/settingsmenu.cpp:415
+Padmapping		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Mods		24	1	500	no	Source/DiabloUI/settingsmenu.cpp:415
+Mods		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+# Hero screens: UiArtText 365 wide, FontSize30, spacing 3.
+Choose Class		30	3	365	no	Source/DiabloUI/hero/selhero.cpp:172
+Save File Exists		30	3	365	no	Source/DiabloUI/hero/selhero.cpp:221
+Enter Name		30	3	365	no	Source/DiabloUI/hero/selhero.cpp:308
+Select Hero		30	3	365	no	Source/DiabloUI/hero/selhero.cpp:538
+# Class list: UiList 320 wide minus the 30 px FOCUS_MED selector on both sides; FontSize24, spacing 1.
+Warrior		24	1	260	no	Source/DiabloUI/hero/selhero.cpp:192
+Rogue		24	1	260	no	Source/DiabloUI/hero/selhero.cpp:192
+Sorcerer		24	1	260	no	Source/DiabloUI/hero/selhero.cpp:192
+Monk		24	1	260	no	Source/DiabloUI/hero/selhero.cpp:192
+Bard		24	1	260	no	Source/DiabloUI/hero/selhero.cpp:192
+Barbarian		24	1	260	no	Source/DiabloUI/hero/selhero.cpp:192
+Load Game		24	1	260	no	Source/DiabloUI/hero/selhero.cpp:224
+New Game		24	1	260	no	Source/DiabloUI/hero/selhero.cpp:225
+# Hero list: UiList 320 wide minus the 20 px FOCUS_SMALL selector on both sides.
+New Hero		24	1	280	no	Source/DiabloUI/hero/selhero.cpp:546
+# Dialog titles: UiArtText 590 wide, FontSize30, spacing 3.
+New Single Player Hero		30	3	590	no	Source/DiabloUI/hero/selhero.cpp:498
+New Multi Player Hero		30	3	590	no	Source/DiabloUI/hero/selhero.cpp:498
+Single Player Characters		30	3	590	no	Source/DiabloUI/hero/selhero.cpp:498
+Multi Player Characters		30	3	590	no	Source/DiabloUI/hero/selhero.cpp:498
+# Hero stat labels: AlignRight in a 110 px box, FontSize12, spacing 1; wider text runs past the box.
+Level:		12	1	110	no	Source/DiabloUI/hero/selhero.cpp:513
+Strength:		12	1	110	no	Source/DiabloUI/hero/selhero.cpp:524
+Magic:		12	1	110	no	Source/DiabloUI/hero/selhero.cpp:524
+Dexterity:		12	1	110	no	Source/DiabloUI/hero/selhero.cpp:524
+Vitality:		12	1	110	no	Source/DiabloUI/hero/selhero.cpp:524
+Savegame:		12	1	110	no	Source/DiabloUI/hero/selhero.cpp:524
+# Buttons: UiArtTextButton, FontSize30, spacing 1.
+OK		30	1	120	no	Source/DiabloUI/hero/selhero.cpp:554
+Delete		30	1	120	no	Source/DiabloUI/hero/selhero.cpp:557
+Cancel		30	1	144	no	Source/DiabloUI/hero/selhero.cpp:562
+Delete Single Player Hero		30	3	590	no	Source/DiabloUI/selyesno.cpp:67
+Delete Multi Player Hero		30	3	590	no	Source/DiabloUI/selyesno.cpp:67
+# Yes/No list: UiList 180 wide minus the 30 px FOCUS_MED selector on both sides; FontSize30, spacing 1.
+Yes		30	1	120	no	Source/DiabloUI/selyesno.cpp:72
+No		30	1	120	no	Source/DiabloUI/selyesno.cpp:73
+# Multiplayer screens.
+Multi Player Game		30	3	590	no	Source/DiabloUI/multi/selconn.cpp:72
+Client-Server (TCP)		30	3	590	no	Source/DiabloUI/multi/selgame.cpp:141
+Description:		24	1	205	no	Source/DiabloUI/multi/selgame.cpp:144
+Select Action		30	3	295	no	Source/DiabloUI/multi/selgame.cpp:150
+# Game selection list: UiList 285 wide minus 2 * 20 px.
+Create Game		24	1	245	no	Source/DiabloUI/multi/selgame.cpp:153
+Create Public Game		24	1	245	no	Source/DiabloUI/multi/selgame.cpp:155
+Join Game		24	1	245	no	Source/DiabloUI/multi/selgame.cpp:156
+Public Games		24	1	245	no	Source/DiabloUI/multi/selgame.cpp:160
+Loading...		24	1	245	no	Source/DiabloUI/multi/selgame.cpp:165
+None		24	1	245	no	Source/DiabloUI/multi/selgame.cpp:167
+CANCEL		30	1	140	no	Source/DiabloUI/multi/selgame.cpp:181
+Create Game		30	3	590	no	Source/DiabloUI/multi/selgame.cpp:495
+Select Difficulty		30	3	295	no	Source/DiabloUI/multi/selgame.cpp:337
+# Difficulty and speed lists: UiList 295 wide minus 2 * 20 px.
+Normal		24	1	255	no	Source/DiabloUI/multi/selgame.cpp:339
+Nightmare		24	1	255	no	Source/DiabloUI/multi/selgame.cpp:340
+Hell		24	1	255	no	Source/DiabloUI/multi/selgame.cpp:341
+Fast		24	1	255	no	Source/DiabloUI/multi/selgame.cpp:507
+Faster		24	1	255	no	Source/DiabloUI/multi/selgame.cpp:508
+Fastest		24	1	255	no	Source/DiabloUI/multi/selgame.cpp:509
+# selgame_Label: UiArtText 205 x 33, FontSize30, spacing 3.
+Normal		30	3	205	no	Source/DiabloUI/multi/selgame.cpp:326
+Nightmare		30	3	205	no	Source/DiabloUI/multi/selgame.cpp:326
+Hell		30	3	205	no	Source/DiabloUI/multi/selgame.cpp:326
+Fast		30	3	205	no	Source/DiabloUI/multi/selgame.cpp:498
+Faster		30	3	205	no	Source/DiabloUI/multi/selgame.cpp:498
+Fastest		30	3	205	no	Source/DiabloUI/multi/selgame.cpp:498
+Enter Game ID		30	3	285	no	Source/DiabloUI/multi/selgame.cpp:366
+Enter address		30	3	285	no	Source/DiabloUI/multi/selgame.cpp:366
+Select Game Speed		30	3	295	no	Source/DiabloUI/multi/selgame.cpp:504
+Enter Password		30	3	285	no	Source/DiabloUI/multi/selgame.cpp:583
+# Title FormatRuntime(_("Join {:s} Games"), _("Client-Server (TCP)")): 590 - (290 - 49) for the Russian argument.
+Join {:s} Games		30	3	349	no	Source/DiabloUI/multi/selgame.cpp:323
+# Connection list: UiList 285 wide minus 2 * 20 px, FontSize12.
+Client-Server (TCP)		12	1	245	no	Source/DiabloUI/multi/selconn.cpp:61
+Offline		12	1	245	no	Source/DiabloUI/multi/selconn.cpp:64
+Requirements:		12	1	205	no	Source/DiabloUI/multi/selconn.cpp:78
+no gateway needed		24	0	220	no	Source/DiabloUI/multi/selconn.cpp:84
+Select Connection		30	3	295	no	Source/DiabloUI/multi/selconn.cpp:90
+# Argument is 4 or 1: 205 - (width("4") 8 - width("{:d}") 27).
+Players Supported: {:d}		12	1	224	no	Source/DiabloUI/multi/selconn.cpp:75
+# Option names drawn as the settings title when their list submenu opens: 640 px, FontSize30, spacing 8.
+Splash		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Sample Rate		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Buffer Size		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Resampling Quality		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Device		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Resolution		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Scaling Quality		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Frame Rate Control		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Hardware Cursor Maximum Size		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Store UI		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Heal Potion Pickup		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Full Heal Potion Pickup		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Mana Potion Pickup		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Full Mana Potion Pickup		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Rejuvenation Potion Pickup		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Full Rejuvenation Potion Pickup		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+# Key and pad action names drawn as the settings title in their binding submenu: 640 px, FontSize30, spacing 8.
+# Belt item 1..8: 640 - (width("7") 14 - width("{}") 30).
+Belt item {}		30	8	656	no	Source/DiabloUI/settingsmenu.cpp:401
+# Quick spell 1..12 and quick message 1..10: 640 - (width("10") 35 - width("{}") 30).
+Quick spell {}		30	8	635	no	Source/DiabloUI/settingsmenu.cpp:401
+Previous quick spell		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Next quick spell		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Use health potion		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Use mana potion		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Speedbook		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Quick save		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Quick load		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Quit game		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Stop hero		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Toggle run in dungeons		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Item highlighting		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Toggle item highlighting		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Toggle automap		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Cycle map type		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Inventory		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Character		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Party		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Quest log		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Spellbook		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Quick Message {}		30	8	635	no	Source/DiabloUI/settingsmenu.cpp:401
+Hide Info Screens		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Zoom		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Pause Game		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Pause Game (Alternate)		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Decrease Brightness		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Increase Brightness		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Help		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Screenshot		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Game info		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Chat Log		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Sort Inventory		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Console		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Primary action		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Secondary action		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Spell action		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Cancel action		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Move up		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Move down		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Move left		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Move right		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Stand ground		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Toggle stand ground		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Automap Move Up		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Automap Move Down		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Automap Move Left		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Automap Move Right		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Move mouse up		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Move mouse down		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Move mouse left		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Move mouse right		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Left mouse click		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Right mouse click		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Gamepad hotspell menu		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Gamepad menu navigator		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+Toggle game menu		30	8	640	no	Source/DiabloUI/settingsmenu.cpp:401
+# Option names on their own split "{}:" line in the 500 px settings list: 500 - 1 - width(":") 6; FontSize24, spacing 1.
+Restrict to Shareware		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Intro		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Walking Sound		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Auto Equip Sound		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Item Pickup Sound		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Channels		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Resampler		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Fullscreen		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Fit to Screen		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Integer Scaling		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Zoom		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Show FPS		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Per-pixel Lighting		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Color Cycling		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Alternate nest art		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Hardware Cursor		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Hardware Cursor For Items		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Friendly Fire		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Full quests in Multiplayer		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Randomize Quests		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Theo Quest		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Cow Quest		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Run in Town		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Run in Dungeons		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Quick Cast		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Test Bard		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Test Barbarian		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Experience Bar		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Floating Item Info Box		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Show health values		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Show mana values		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Show Party Information		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Enemy Health Bar		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Show Monster Type		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Show Item Labels		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Auto Refill Belt		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Auto Equip Weapons		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Auto Equip Armor		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Auto Equip Helms		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Auto Equip Shields		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Auto Equip Jewelry		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Auto Gold Pickup		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Auto Elixir Pickup		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Auto Oil Pickup		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Auto Pickup in Town		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Disable Crippling Shrines		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Grab Input		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+Pause Game When Window Loses Focus		24	1	493	no	Source/DiabloUI/settingsmenu.cpp:430
+# Option values: the split value line and the option's submenu list, 500 px, FontSize24, spacing 1.
+OFF		24	1	500	no	Source/DiabloUI/settingsmenu.cpp:431
+ON		24	1	500	no	Source/DiabloUI/settingsmenu.cpp:431
+Logo and Title Screen		24	1	500	no	Source/DiabloUI/settingsmenu.cpp:441
+Title Screen		24	1	500	no	Source/DiabloUI/settingsmenu.cpp:441
+Nearest Pixel		24	1	500	no	Source/DiabloUI/settingsmenu.cpp:441
+Bilinear		24	1	500	no	Source/DiabloUI/settingsmenu.cpp:441
+Anisotropic		24	1	500	no	Source/DiabloUI/settingsmenu.cpp:441
+Vertical Sync		24	1	500	no	Source/DiabloUI/settingsmenu.cpp:441
+Limit FPS		24	1	500	no	Source/DiabloUI/settingsmenu.cpp:441
+Text-only list		24	1	500	no	Source/DiabloUI/settingsmenu.cpp:441
+List with item graphics		24	1	500	no	Source/DiabloUI/settingsmenu.cpp:441
+Visual grid		24	1	500	no	Source/DiabloUI/settingsmenu.cpp:441
+# Character panel labels: WordWrapString(label, labelLength, GameFont12, 0), AlignRight, 24 px high field = 2 lines.
+Level		12	0	45	wrap:2	Source/panels/charpanel.cpp:252
+Experience		12	0	91	wrap:2	Source/panels/charpanel.cpp:252
+Next level		12	0	198	wrap:2	Source/panels/charpanel.cpp:252
+Strength		12	0	76	wrap:2	Source/panels/charpanel.cpp:252
+Magic		12	0	76	wrap:2	Source/panels/charpanel.cpp:252
+Dexterity		12	0	76	wrap:2	Source/panels/charpanel.cpp:252
+Vitality		12	0	76	wrap:2	Source/panels/charpanel.cpp:252
+Points to distribute		12	0	76	wrap:2	Source/panels/charpanel.cpp:252
+Armor class		12	0	68	wrap:2	Source/panels/charpanel.cpp:252
+Chance To Hit		12	0	68	wrap:2	Source/panels/charpanel.cpp:252
+Damage		12	0	68	wrap:2	Source/panels/charpanel.cpp:252
+Life		12	0	76	wrap:2	Source/panels/charpanel.cpp:252
+Mana		12	0	76	wrap:2	Source/panels/charpanel.cpp:252
+Resist magic		12	0	68	wrap:2	Source/panels/charpanel.cpp:252
+Resist fire		12	0	68	wrap:2	Source/panels/charpanel.cpp:252
+Resist lightning		12	0	68	wrap:2	Source/panels/charpanel.cpp:252
+# Character panel column headers: one line only, a second line would overlap the box below.
+Base		12	0	44	no	Source/panels/charpanel.cpp:252
+Now		12	0	44	no	Source/panels/charpanel.cpp:252
+Gold		12	0	98	no	Source/panels/charpanel.cpp:252
+# Character panel class name: value box 149 - 2 * 5 padding, KerningFitSpacing.
+Warrior		12	1	139	yes	Source/panels/charpanel.cpp:315
+Rogue		12	1	139	yes	Source/panels/charpanel.cpp:315
+Sorcerer		12	1	139	yes	Source/panels/charpanel.cpp:315
+Monk		12	1	139	yes	Source/panels/charpanel.cpp:315
+Bard		12	1	139	yes	Source/panels/charpanel.cpp:315
+Barbarian		12	1	139	yes	Source/panels/charpanel.cpp:315
+# "Next level" value box at the maximum level: 99 - 2 * 5 padding, KerningFitSpacing.
+None		12	1	89	yes	Source/panels/charpanel.cpp:315
+# Spellbook line 0: 246 px, shared with the right-aligned "Уровень 20" (82 px) and a 6 px gap: 246 - 6 - 82.
+Firebolt	spell	12	1	158	no	Source/panels/spell_book.cpp:168
+Charged Bolt	spell	12	1	158	no	Source/panels/spell_book.cpp:168
+Holy Bolt	spell	12	1	158	no	Source/panels/spell_book.cpp:168
+Healing	spell	12	1	158	no	Source/panels/spell_book.cpp:168
+Heal Other	spell	12	1	158	no	Source/panels/spell_book.cpp:168
+Inferno	spell	12	1	158	no	Source/panels/spell_book.cpp:168
+Resurrect	spell	12	1	158	no	Source/panels/spell_book.cpp:168
+Fire Wall	spell	12	1	158	no	Source/panels/spell_book.cpp:168
+Telekinesis	spell	12	1	158	no	Source/panels/spell_book.cpp:168
+Lightning	spell	12	1	158	no	Source/panels/spell_book.cpp:168
+Town Portal	spell	12	1	158	no	Source/panels/spell_book.cpp:168
+Flash	spell	12	1	158	no	Source/panels/spell_book.cpp:168
+Stone Curse	spell	12	1	158	no	Source/panels/spell_book.cpp:168
+Phasing	spell	12	1	158	no	Source/panels/spell_book.cpp:168
+Mana Shield	spell	12	1	158	no	Source/panels/spell_book.cpp:168
+Elemental	spell	12	1	158	no	Source/panels/spell_book.cpp:168
+Fireball	spell	12	1	158	no	Source/panels/spell_book.cpp:168
+Flame Wave	spell	12	1	158	no	Source/panels/spell_book.cpp:168
+Chain Lightning	spell	12	1	158	no	Source/panels/spell_book.cpp:168
+Guardian	spell	12	1	158	no	Source/panels/spell_book.cpp:168
+Nova	spell	12	1	158	no	Source/panels/spell_book.cpp:168
+Golem	spell	12	1	158	no	Source/panels/spell_book.cpp:168
+Teleport	spell	12	1	158	no	Source/panels/spell_book.cpp:168
+Apocalypse	spell	12	1	158	no	Source/panels/spell_book.cpp:168
+Bone Spirit	spell	12	1	158	no	Source/panels/spell_book.cpp:168
+Blood Star	spell	12	1	158	no	Source/panels/spell_book.cpp:168
+Etherealize	spell	12	1	158	no	Source/panels/spell_book.cpp:168
+Lightning Wall	spell	12	1	158	no	Source/panels/spell_book.cpp:168
+Immolation	spell	12	1	158	no	Source/panels/spell_book.cpp:168
+Warp	spell	12	1	158	no	Source/panels/spell_book.cpp:168
+Reflect	spell	12	1	158	no	Source/panels/spell_book.cpp:168
+Berserk	spell	12	1	158	no	Source/panels/spell_book.cpp:168
+Ring of Fire	spell	12	1	158	no	Source/panels/spell_book.cpp:168
+Search	spell	12	1	158	no	Source/panels/spell_book.cpp:168
+# Class skills are always of the Skill type, so they are alone on line 0.
+Item Repair	spell	12	1	246	no	Source/panels/spell_book.cpp:168
+Trap Disarm	spell	12	1	246	no	Source/panels/spell_book.cpp:168
+Staff Recharge	spell	12	1	246	no	Source/panels/spell_book.cpp:168
+Identify	spell	12	1	246	no	Source/panels/spell_book.cpp:168
+Rage	spell	12	1	246	no	Source/panels/spell_book.cpp:168
+# Next to the longest leveled name (145 px): 246 - 6 - 145 = 95, then "20" for "{:d}": 95 - (19 - 27).
+Level {:d}	spellbook	12	1	103	no	Source/panels/spell_book.cpp:180
+# Line 1: right-aligned power text next to the spell's own "Мана: {:d}" and a 6 px gap.
+Damage: {:d} - {:d}		12	1	160	no	Source/panels/spell_book.cpp:182
+Heals: {:d} - {:d}		12	1	161	no	Source/panels/spell_book.cpp:182
+Dmg: 1/3 target hp		12	1	168	no	Source/panels/spell_book.cpp:182
+Unusable		12	1	161	no	Source/panels/spell_book.cpp:182
+Mana: {:d}	spellbook	12	1	100	no	Source/panels/spell_book.cpp:184
+Skill		12	1	246	no	Source/panels/spell_book.cpp:171
+# Up to 240 charges, widest "200": 246 - (30 - 27).
+Staff ({:d} charge)		12	1	243	no	Source/panels/spell_book.cpp:175
+# Main panel buttons: 63 px button art (53 px talk buttons), AlignCenter | KerningFitSpacing.
+char		12	1	63	yes	Source/panels/mainpanel.cpp:90
+quests		12	1	63	yes	Source/panels/mainpanel.cpp:91
+map		12	1	63	yes	Source/panels/mainpanel.cpp:92
+menu		12	1	63	yes	Source/panels/mainpanel.cpp:93
+inv		12	1	63	yes	Source/panels/mainpanel.cpp:94
+spells		12	1	63	yes	Source/panels/mainpanel.cpp:95
+voice		12	1	53	yes	Source/panels/mainpanel.cpp:112
+mute		12	1	53	yes	Source/panels/mainpanel.cpp:128
+# Quest log: PrintQLString draws in a 257 px rect, wider text wraps into the next entry.
+The Magic Rock		12	1	257	no	Source/panels/quest_log.cpp:63
+Black Mushroom		12	1	257	no	Source/panels/quest_log.cpp:63
+Gharbad The Weak		12	1	257	no	Source/panels/quest_log.cpp:63
+Zhar the Mad		12	1	257	no	Source/panels/quest_log.cpp:63
+Lachdanan		12	1	257	no	Source/panels/quest_log.cpp:63
+Diablo		12	1	257	no	Source/panels/quest_log.cpp:63
+The Butcher		12	1	257	no	Source/panels/quest_log.cpp:63
+Ogden's Sign		12	1	257	no	Source/panels/quest_log.cpp:63
+Halls of the Blind		12	1	257	no	Source/panels/quest_log.cpp:63
+Valor		12	1	257	no	Source/panels/quest_log.cpp:63
+Anvil of Fury		12	1	257	no	Source/panels/quest_log.cpp:63
+Warlord of Blood		12	1	257	no	Source/panels/quest_log.cpp:63
+The Curse of King Leoric		12	1	257	no	Source/panels/quest_log.cpp:63
+Poisoned Water Supply		12	1	257	no	Source/panels/quest_log.cpp:63
+The Chamber of Bone		12	1	257	no	Source/panels/quest_log.cpp:63
+Archbishop Lazarus		12	1	257	no	Source/panels/quest_log.cpp:63
+Grave Matters		12	1	257	no	Source/panels/quest_log.cpp:63
+Farmer's Orchard		12	1	257	no	Source/panels/quest_log.cpp:63
+Little Girl		12	1	257	no	Source/panels/quest_log.cpp:63
+Wandering Trader		12	1	257	no	Source/panels/quest_log.cpp:63
+The Defiler		12	1	257	no	Source/panels/quest_log.cpp:63
+Na-Krul		12	1	257	no	Source/panels/quest_log.cpp:63
+Cornerstone of the World		12	1	257	no	Source/panels/quest_log.cpp:63
+The Jersey's Jersey		12	1	257	no	Source/panels/quest_log.cpp:63
+# Info box: PrintInfo draws every line in InfoBoxRect (288 px) with KerningFitSpacing, spacing 2.
+Character Information		12	2	288	yes	Source/control/control_infobox.cpp:323
+Quests log		12	2	288	yes	Source/control/control_infobox.cpp:323
+Automap		12	2	288	yes	Source/control/control_infobox.cpp:323
+Main Menu		12	2	288	yes	Source/control/control_infobox.cpp:323
+Inventory		12	2	288	yes	Source/control/control_infobox.cpp:323
+Spell book		12	2	288	yes	Source/control/control_infobox.cpp:323
+Send Message		12	2	288	yes	Source/control/control_infobox.cpp:323
+Player friendly		12	2	288	yes	Source/control/control_infobox.cpp:326
+Player attack		12	2	288	yes	Source/control/control_infobox.cpp:328
+# Widest hotkey argument is "Enter" (38 px at spacing 0): 288 - (38 - 22).
+Hotkey: {:s}		12	2	272	yes	Source/control/control_infobox.cpp:331
+Select current spell button		12	2	288	yes	Source/control/control_infobox.cpp:343
+# Widest argument is the 12 px gamepad button glyph: 288 - (12 - 22).
+Hotkey: '{:s}'		12	2	298	yes	Source/control/control_infobox.cpp:350
+# Widest Russian class skill "Обезвредить Ловушку" (141 px at spacing 0): 288 - (141 - 22).
+{:s} Skill		12	2	169	yes	Source/control/control_infobox.cpp:357
+# Widest Russian book spell "Заряженная Стрела" (129 px at spacing 0): 288 - (129 - 22).
+{:s} Spell		12	2	181	yes	Source/control/control_infobox.cpp:360
+Spell Level 0 - Unusable		12	2	288	yes	Source/control/control_infobox.cpp:362
+# Spell level up to 20, widest "20" (18 px at spacing 0): 288 - (18 - 24).
+Spell Level {:d}		12	2	294	yes	Source/control/control_infobox.cpp:362
+# Widest Russian scroll spell "Городской Портал" (126 px at spacing 0): 288 - (126 - 22).
+Scroll of {:s}		12	2	184	yes	Source/control/control_infobox.cpp:365
+# Up to 48 scrolls, widest "40" (18 px at spacing 0): 288 - (18 - 24).
+{:d} Scroll		12	2	294	yes	Source/control/control_infobox.cpp:369
+# Widest Russian staff spell "Заряженная Стрела" (129 px at spacing 0): 288 - (129 - 22).
+Staff of {:s}		12	2	181	yes	Source/control/control_infobox.cpp:372
+# Up to 240 charges, widest "200" (28 px at spacing 0): 288 - (28 - 24).
+{:d} Charge		12	2	284	yes	Source/control/control_infobox.cpp:373
+# Up to 10,000 gold, widest "10,000" (48 px at spacing 0): 288 - (48 - 22).
+{:s} gold piece		12	2	262	yes	Source/control/control_infobox.cpp:405
+Requirements not met		12	2	288	yes	Source/control/control_infobox.cpp:407
+# Widest Russian class "Разбойница" (77 px) and level "20" (18 px), at spacing 0: 288 - (77 - 22) - (18 - 24).
+{:s}, Level: {:d}		12	2	239	yes	Source/control/control_infobox.cpp:436
+# Up to 2000 hit points, widest "2000" (38 px at spacing 0): 288 - 2 * (38 - 24).
+Hit Points {:d} of {:d}		12	2	260	yes	Source/control/control_infobox.cpp:437
+Right click to inspect		12	2	288	yes	Source/control/control_infobox.cpp:443
+# Hotkey names as the argument of the Russian "Горячая клавиша: {:s}" (144 px at spacing 0): 288 - (144 - 22).
+Tab		12	2	166	yes	Source/control/control_infobox.cpp:331
+Esc		12	2	166	yes	Source/control/control_infobox.cpp:331
+Enter		12	2	166	yes	Source/control/control_infobox.cpp:331
+# Scroll-only spell as the argument of the Russian "Свиток {:s}" (75 px at spacing 0): 288 - (75 - 22).
+Infravision	spell	12	2	235	yes	Source/control/control_infobox.cpp:365
+# Staff-only spells as the argument of the Russian "Посох {:s}" (69 px at spacing 0): 288 - (69 - 22).
+Mana	spell	12	2	241	yes	Source/control/control_infobox.cpp:372
+the Magi	spell	12	2	241	yes	Source/control/control_infobox.cpp:372
+the Jester	spell	12	2	241	yes	Source/control/control_infobox.cpp:372
+# Stash withdraw dialog: WordWrapString(text, 200), 3 lines fit in the 50 px rect.
+How many gold pieces do you want to withdraw?		12	1	200	wrap:3	Source/qol/stash.cpp:660
+# Game menu: FontSize46, spacing 2. Selectable items need room for the pentagrams: (640 - width) / 2 >= 54.
+Options		46	2	532	no	Source/gamemenu.cpp:52
+Save Game		46	2	532	no	Source/gamemenu.cpp:53
+Load Game		46	2	532	no	Source/gamemenu.cpp:54
+Exit to Main Menu		46	2	532	no	Source/gamemenu.cpp:55
+Quit Game		46	2	532	no	Source/gamemenu.cpp:56
+Previous Menu		46	2	532	no	Source/gamemenu.cpp:77
+# Slider labels start at x 75, the slider bar at x 261.
+Music		46	2	186	no	Source/gamemenu.cpp:83
+Sound		46	2	186	no	Source/gamemenu.cpp:88
+Gamma		46	2	186	no	Source/gamemenu.cpp:75
+Speed		46	2	186	no	Source/gamemenu.cpp:76
+# Disabled items, never selected: the 640 px screen.
+Music Disabled		46	2	640	no	Source/gamemenu.cpp:84
+Sound Disabled		46	2	640	no	Source/gamemenu.cpp:89
+Speed: Fastest		46	2	640	no	Source/gamemenu.cpp:163
+Speed: Faster		46	2	640	no	Source/gamemenu.cpp:165
+Speed: Fast		46	2	640	no	Source/gamemenu.cpp:167
+Speed: Normal		46	2	640	no	Source/gamemenu.cpp:169
+Pause		46	2	640	no	Source/gmenu.cpp:190
+# Small store box: PrintSString rect 255 px, GameFont12, spacing 1.
+Welcome to the		12	1	255	no	Source/stores.cpp:436
+Blacksmith's shop		12	1	255	no	Source/stores.cpp:437
+Would you like to:		12	1	255	no	Source/stores.cpp:438
+Talk to Griswold		12	1	255	no	Source/stores.cpp:439
+Trade / Repair		12	1	255	no	Source/stores.cpp:441
+Leave the shop		12	1	255	no	Source/stores.cpp:442
+Buy basic items		12	1	255	no	Source/stores.cpp:444
+Buy premium items		12	1	255	no	Source/stores.cpp:445
+Sell items		12	1	255	no	Source/stores.cpp:446
+Repair items		12	1	255	no	Source/stores.cpp:447
+Witch's shack		12	1	255	no	Source/stores.cpp:694
+Talk to Adria		12	1	255	no	Source/stores.cpp:696
+Buy / Sell		12	1	255	no	Source/stores.cpp:698
+Recharge staves		12	1	255	no	Source/stores.cpp:699
+Leave the shack		12	1	255	no	Source/stores.cpp:700
+Buy items		12	1	255	no	Source/stores.cpp:703
+Wirt the Peg-legged boy		12	1	255	no	Source/stores.cpp:975
+Talk to Wirt		12	1	255	no	Source/stores.cpp:978
+I have something for sale,		12	1	255	no	Source/stores.cpp:979
+but it will cost 50 gold		12	1	255	no	Source/stores.cpp:980
+just to take a look. 		12	1	255	no	Source/stores.cpp:981
+What have you got?		12	1	255	no	Source/stores.cpp:982
+Say goodbye		12	1	255	no	Source/stores.cpp:983
+Healer's home		12	1	255	no	Source/stores.cpp:1036
+Talk to Pepin		12	1	255	no	Source/stores.cpp:1038
+Leave Healer's home		12	1	255	no	Source/stores.cpp:1040
+The Town Elder		12	1	255	no	Source/stores.cpp:1076
+Talk to Cain		12	1	255	no	Source/stores.cpp:1078
+Identify an item		12	1	255	no	Source/stores.cpp:1079
+is not available		12	1	255	no	Source/stores.cpp:1214
+in the shareware		12	1	255	no	Source/stores.cpp:1215
+version		12	1	255	no	Source/stores.cpp:1216
+Gossip		12	1	255	no	Source/stores.cpp:1243
+Rising Sun		12	1	255	no	Source/stores.cpp:1252
+Talk to Ogden		12	1	255	no	Source/stores.cpp:1254
+Leave the tavern		12	1	255	no	Source/stores.cpp:1255
+Gillian		12	1	255	no	Source/stores.cpp:1264
+Talk to Gillian		12	1	255	no	Source/stores.cpp:1266
+Access Storage		12	1	255	no	Source/stores.cpp:1267
+Farnham the Drunk		12	1	255	no	Source/stores.cpp:1277
+Talk to Farnham		12	1	255	no	Source/stores.cpp:1279
+Say Goodbye		12	1	255	no	Source/stores.cpp:1280
+Back		12	1	255	no	Source/stores.cpp:337
+# Quest entries in the small talk menu.
+The Magic Rock		12	1	255	no	Source/stores.cpp:1239
+Black Mushroom		12	1	255	no	Source/stores.cpp:1239
+Lachdanan		12	1	255	no	Source/stores.cpp:1239
+Diablo		12	1	255	no	Source/stores.cpp:1239
+The Butcher		12	1	255	no	Source/stores.cpp:1239
+Ogden's Sign		12	1	255	no	Source/stores.cpp:1239
+Halls of the Blind		12	1	255	no	Source/stores.cpp:1239
+Valor		12	1	255	no	Source/stores.cpp:1239
+Anvil of Fury		12	1	255	no	Source/stores.cpp:1239
+Warlord of Blood		12	1	255	no	Source/stores.cpp:1239
+The Curse of King Leoric		12	1	255	no	Source/stores.cpp:1239
+Poisoned Water Supply		12	1	255	no	Source/stores.cpp:1239
+The Chamber of Bone		12	1	255	no	Source/stores.cpp:1239
+Archbishop Lazarus		12	1	255	no	Source/stores.cpp:1239
+Grave Matters		12	1	255	no	Source/stores.cpp:1239
+# Line 1 of the large store box, left of the right-aligned "Your gold" text: 579 - 52 - 195 (7-digit Russian gold text) - 1.
+I have these items for sale:		12	1	331	no	Source/stores.cpp:471
+I have these premium items for sale:		12	1	331	no	Source/stores.cpp:514
+You have nothing I want.		12	1	331	no	Source/stores.cpp:593
+Which item is for sale?		12	1	331	no	Source/stores.cpp:604
+You have nothing to repair.		12	1	331	no	Source/stores.cpp:672
+Repair which item?		12	1	331	no	Source/stores.cpp:683
+You have nothing to recharge.		12	1	331	no	Source/stores.cpp:892
+Recharge which item?		12	1	331	no	Source/stores.cpp:903
+I have this item for sale:		12	1	331	no	Source/stores.cpp:996
+You have nothing to identify.		12	1	331	no	Source/stores.cpp:1172
+Identify which item?		12	1	331	no	Source/stores.cpp:1183
+# Large store box without a scroll bar: PrintSString rect 575 px.
+You do not have enough gold		12	1	575	no	Source/stores.cpp:916
+You do not have enough room in inventory		12	1	575	no	Source/stores.cpp:924
+Do we have a deal?		12	1	575	no	Source/stores.cpp:942
+Are you sure you want to identify this item?		12	1	575	no	Source/stores.cpp:945
+Are you sure you want to buy this item?		12	1	575	no	Source/stores.cpp:951
+Are you sure you want to recharge this item?		12	1	575	no	Source/stores.cpp:954
+Are you sure you want to sell this item?		12	1	575	no	Source/stores.cpp:958
+Are you sure you want to repair this item?		12	1	575	no	Source/stores.cpp:961
+Yes		12	1	575	no	Source/stores.cpp:967
+No		12	1	575	no	Source/stores.cpp:968
+Leave		12	1	575	no	Source/stores.cpp:1013
+This item is:		12	1	575	no	Source/stores.cpp:1198
+Done		12	1	575	no	Source/stores.cpp:1201
+# Visual store tabs: 72 x 22 buttons.
+Basic		12	1	72	no	Source/qol/visual_store.cpp:442
+Premium		12	1	72	no	Source/qol/visual_store.cpp:446
+Misc		12	1	72	no	Source/qol/visual_store.cpp:454
+# Gold text from x 20 must end before the Repair All button at x 233 (212 px), minus "0,000,000" (86 px) and 1 spacing.
+Gold: 		12	1	125	no	Source/qol/visual_store.cpp:502
+# Visual store button hover texts, drawn by PrintInfo.
+Basic items		12	2	288	yes	Source/qol/visual_store.cpp:533
+Miscellaneous items		12	2	288	yes	Source/qol/visual_store.cpp:538
+Premium items		12	2	288	yes	Source/qol/visual_store.cpp:547
+Repair All		12	2	288	yes	Source/qol/visual_store.cpp:560
+Nothing to repair		12	2	288	yes	Source/qol/visual_store.cpp:566
+Repair		12	2	288	yes	Source/qol/visual_store.cpp:573
+Repair a single item		12	2	288	yes	Source/qol/visual_store.cpp:575

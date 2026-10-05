@@ -657,7 +657,7 @@ msgstr "Выбор сложности"
 #: Source/DiabloUI/multi/selgame.cpp:355
 #, c++-format
 msgid "Join {:s} Games"
-msgstr "Присоединиться к {:s} играм"
+msgstr "Подключиться к {:s}"
 
 #: Source/DiabloUI/multi/selgame.cpp:360
 msgid "Enter Game ID"
@@ -709,11 +709,11 @@ msgstr "Быстрая"
 
 #: Source/DiabloUI/multi/selgame.cpp:508 Source/DiabloUI/multi/selgame.cpp:534
 msgid "Faster"
-msgstr "Очень быстрая"
+msgstr "Оч. быстрая"
 
 #: Source/DiabloUI/multi/selgame.cpp:509 Source/DiabloUI/multi/selgame.cpp:538
 msgid "Fastest"
-msgstr "Самая быстрая"
+msgstr "Быстрейшая"
 
 # Подобрано под размер меню.
 #: Source/DiabloUI/multi/selgame.cpp:527
@@ -773,7 +773,7 @@ msgstr "Нет"
 
 #: Source/DiabloUI/settingsmenu.cpp:170
 msgid "Press gamepad buttons to change."
-msgstr "Нажмите любую кнопку для изменения."
+msgstr "Нажмите кнопки для изменения."
 
 #: Source/DiabloUI/settingsmenu.cpp:447
 msgid "Bound key:"
@@ -1548,7 +1548,7 @@ msgstr "Показать/скрыть предметы на земле (удер
 
 #: Source/diablo.cpp:1961 Source/diablo.cpp:2547
 msgid "Toggle item highlighting"
-msgstr "Переключить подсветку предметов"
+msgstr "Подсветка предметов вкл/выкл"
 
 #: Source/diablo.cpp:1962 Source/diablo.cpp:2548
 msgid "Permanent show/hide items on ground."
@@ -2324,7 +2324,7 @@ msgstr "Подбор Зелий Исцеления"
 
 #: Source/engine/demomode.cpp:211 Source/options.cpp:875
 msgid "Full Heal Potion Pickup"
-msgstr "Подбор Зелий Полного Исцеления"
+msgstr "Подбор Зелий Полн. Исцеления"
 
 #: Source/engine/demomode.cpp:212 Source/options.cpp:876
 msgid "Mana Potion Pickup"
@@ -2340,7 +2340,7 @@ msgstr "Подбор Зелий Омоложения"
 
 #: Source/engine/demomode.cpp:215 Source/options.cpp:879
 msgid "Full Rejuvenation Potion Pickup"
-msgstr "Подбор Зелий Полного Омоложения"
+msgstr "Подбор Зелий Полн. Омоложения"
 
 #: Source/gamemenu.cpp:52 Source/gamemenu.cpp:64
 msgid "Options"
@@ -4243,7 +4243,7 @@ msgstr "Использовать аппаратный курсор для пре
 
 #: Source/options.cpp:804
 msgid "Hardware Cursor Maximum Size"
-msgstr "Максимальный размер аппаратного курсора"
+msgstr "Макс. размер аппарат. курсора"
 
 #: Source/options.cpp:804
 msgid "Maximum width / height for the hardware cursor. Larger cursors fall back to software."
@@ -4486,7 +4486,7 @@ msgstr "Текстовый список"
 
 #: Source/options.cpp:883
 msgid "List with item graphics"
-msgstr "Список с визуальной демонстрацией предметов"
+msgstr "Список с изображениями предметов"
 
 #: Source/options.cpp:884
 msgid "Visual grid"
@@ -4670,7 +4670,7 @@ msgstr "меню"
 
 #: Source/panels/mainpanel.cpp:94
 msgid "inv"
-msgstr "инвентарь"
+msgstr "инвент."
 
 #: Source/panels/mainpanel.cpp:95
 msgid "spells"

@@ -70,7 +70,7 @@ set(standalone_tests
   utf8_test
 )
 if(NOT USE_SDL1)
-  list(APPEND standalone_tests text_render_integration_test)
+  list(APPEND standalone_tests ru_text_fit_test text_render_integration_test)
 endif()
 set(benchmarks
   clx_render_benchmark
@@ -228,6 +228,29 @@ if(DEVILUTIONX_SCREENSHOT_FORMAT STREQUAL DEVILUTIONX_SCREENSHOT_FORMAT_PNG AND 
     ${_text_render_integration_test_fixtures}
   )
   add_dependencies(text_render_integration_test text_render_integration_test_resources)
+endif()
+if(NOT USE_SDL1)
+  target_link_dependencies(ru_text_fit_test
+    PRIVATE
+    DevilutionX::SDL
+    GTest::gtest
+    app_fatal_for_testing
+    language_for_testing
+    libdevilutionx_strings
+    libdevilutionx_text_render
+  )
+  target_compile_definitions(ru_text_fit_test PRIVATE
+    DEVILUTIONX_RU_PO_PATH="${PROJECT_SOURCE_DIR}/Translations/ru.po"
+    DEVILUTIONX_RU_TEXT_FIT_CONSTRAINTS_PATH="${PROJECT_SOURCE_DIR}/test/fixtures/ru_text_fit/constraints.tsv"
+  )
+  set(_ru_text_fit_test_fonts)
+  foreach(_font_size 12 22 24 30 42 46)
+    foreach(_font_row 00 04 20)
+      list(APPEND _ru_text_fit_test_fonts "${DEVILUTIONX_ASSETS_OUTPUT_DIRECTORY}/fonts/${_font_size}-${_font_row}.clx")
+    endforeach()
+  endforeach()
+  add_custom_target(ru_text_fit_test_resources DEPENDS ${_ru_text_fit_test_fonts})
+  add_dependencies(ru_text_fit_test ru_text_fit_test_resources)
 endif()
 target_link_dependencies(sheen_bidi_test PRIVATE libdevilutionx_sheen_bidi)
 target_link_dependencies(utf8_test PRIVATE libdevilutionx_utf8)
