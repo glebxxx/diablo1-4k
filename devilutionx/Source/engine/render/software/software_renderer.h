@@ -179,6 +179,8 @@ private:
 
 	void UndrawCursorFromBuffer();
 	void DrawCursorToBuffer();
+	/** @brief Composites the cursor, applies the fade and presents the frame. */
+	void PresentFrame();
 };
 
 } // namespace devilution

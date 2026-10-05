@@ -1220,6 +1220,9 @@ void Gl1ApplyFade(int fadeLevel)
 	EnsureFrameBegun();
 
 	const float alpha = (fadeLevel >= 256) ? 1.0f : (static_cast<float>(fadeLevel) / 256.0f);
+	// The renderer-drawn cursor leaves blending disabled.
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glDisable(GL_TEXTURE_2D);
 	glDisable(GL_ALPHA_TEST);
 	glColor4f(0.0f, 0.0f, 0.0f, alpha);

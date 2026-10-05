@@ -449,6 +449,22 @@ void SoftwareRenderer::EndFrame()
 	if (HeadlessMode)
 		return;
 
+	PresentFrame();
+
+	// Nothing calls BeginFrame(): restore the pixels under the cursor and reset the dirty
+	// regions here, so the next frame starts from the drawn scene, as UndrawCursor() did.
+	UndrawCursorFromBuffer();
+	numDirtyRects_ = 0;
+	fullScreenDirty_ = false;
+}
+
+void SoftwareRenderer::PresentFrame()
+{
+	// Only the game view marks the regions it changed (see MarkDirtyRegions). Frames without
+	// marks (menus, progress, fades) are copied in full, as BltFast(nullptr, nullptr) did.
+	if (numDirtyRects_ == 0)
+		fullScreenDirty_ = true;
+
 	// Composite the software cursor before presenting.
 	DrawCursorToBuffer();
 
@@ -664,6 +680,7 @@ void SoftwareRenderer::ApplyFade(int fadeLevel)
 	// fadeLevel: 0 = fully visible, 256 = fully black.
 	// Compute faded palette from system_palette and apply.
 	const unsigned visibility = 256 - static_cast<unsigned>(fadeLevel);
+	fullScreenDirty_ = true;
 
 	std::array<SDL_Color, 256> fadedColors;
 	ApplyFadeLevel(visibility, fadedColors.data(), system_palette.data());

@@ -469,7 +469,8 @@ float GetDpiScalingFactor()
 	}
 	return dispScale;
 #elif !defined(USE_SDL1)
-	if (!GetRenderer().HasPresentationLayer())
+	// SpawnWindow asks for the preferred window size before the renderer exists.
+	if (CurrentRenderer == nullptr || !GetRenderer().HasPresentationLayer())
 		return 1.0F;
 
 	const Size outputSize = GetRenderer().GetOutputSize();
