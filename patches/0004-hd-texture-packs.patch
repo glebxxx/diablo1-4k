@@ -69,10 +69,10 @@ index 2488f2c..f13b094 100644
    add_subdirectory(3rdParty/discord)
  endif()
 diff --git a/CMake/Tests.cmake b/CMake/Tests.cmake
-index 1bbd8d1..b86e28e 100644
+index 627c33a..48829cb 100644
 --- a/CMake/Tests.cmake
 +++ b/CMake/Tests.cmake
-@@ -81,6 +81,13 @@ set(benchmarks
+@@ -82,6 +82,13 @@ set(benchmarks
    path_benchmark
  )
  
@@ -86,7 +86,7 @@ index 1bbd8d1..b86e28e 100644
  include(test/Fixtures.cmake)
  
  foreach(test_target ${tests} ${standalone_tests} ${benchmarks})
-@@ -138,6 +145,10 @@ target_link_dependencies(crawl_test PRIVATE libdevilutionx_crawl)
+@@ -139,6 +146,10 @@ target_link_dependencies(crawl_test PRIVATE libdevilutionx_crawl)
  target_link_dependencies(crawl_benchmark PRIVATE libdevilutionx_crawl)
  target_link_dependencies(data_file_test PRIVATE libdevilutionx_txtdata app_fatal_for_testing language_for_testing)
  target_link_dependencies(dun_render_benchmark PRIVATE libdevilutionx_so)
@@ -1491,7 +1491,7 @@ index 0000000..cde13a6
 +
 +} // namespace devilution
 diff --git a/Source/engine/render/gl1/gl1_renderer.cpp b/Source/engine/render/gl1/gl1_renderer.cpp
-index 72c9cd9..b586e17 100644
+index 6260f1f..7176082 100644
 --- a/Source/engine/render/gl1/gl1_renderer.cpp
 +++ b/Source/engine/render/gl1/gl1_renderer.cpp
 @@ -182,6 +182,42 @@ constexpr float TileLightBrightness[16] = {
@@ -1564,7 +1564,7 @@ index 72c9cd9..b586e17 100644
  	glColor4f(1, 1, 1, 1);
  }
  
-@@ -601,7 +637,7 @@ void Gl1DrawClxBlendedTRN(Point position, ClxSprite clx, const uint8_t *trn)
+@@ -601,10 +637,15 @@ void Gl1DrawClxBlendedTRN(Point position, ClxSprite clx, const uint8_t *trn)
  	int y = position.y - clx.height() + 1;
  	EnsureFrameBegun();
  	glColor4f(1, 1, 1, 0.5f);
@@ -1573,7 +1573,15 @@ index 72c9cd9..b586e17 100644
  	glColor4f(1, 1, 1, 1);
  }
  
-@@ -612,7 +648,7 @@ void Gl1DrawClxWithLight(Point position, ClxSprite clx, uint8_t lightLevel)
++bool Gl1HasHdSprite(ClxSprite clx)
++{
++	return textureCache.HasHdSprite(clx);
++}
++
+ void Gl1DrawClxWithLight(Point position, ClxSprite clx, uint8_t lightLevel)
+ {
+ 	auto &tex = textureCache.GetSpriteTexture(clx, nullptr);
+@@ -612,7 +653,7 @@ void Gl1DrawClxWithLight(Point position, ClxSprite clx, uint8_t lightLevel)
  	int y = position.y - clx.height() + 1;
  	EnsureFrameBegun();
  	SetVertexLighting(lightLevel);
@@ -1582,7 +1590,7 @@ index 72c9cd9..b586e17 100644
  	glColor4f(1, 1, 1, 1);
  }
  
-@@ -624,7 +660,7 @@ void Gl1DrawClxWithLightBlended(Point position, ClxSprite clx, uint8_t lightLeve
+@@ -624,7 +665,7 @@ void Gl1DrawClxWithLightBlended(Point position, ClxSprite clx, uint8_t lightLeve
  	EnsureFrameBegun();
  	float brightness = SpriteLightBrightness[std::min<uint8_t>(lightLevel, 15)];
  	glColor4f(brightness, brightness, brightness, 0.5f);
@@ -1591,7 +1599,7 @@ index 72c9cd9..b586e17 100644
  	glColor4f(1, 1, 1, 1);
  }
  
-@@ -639,17 +675,7 @@ void Gl1DrawTile(Point position, TileType tileType, const uint8_t *src, int_fast
+@@ -639,17 +680,7 @@ void Gl1DrawTile(Point position, TileType tileType, const uint8_t *src, int_fast
  		// Vertex lighting: texture is unlit, vertex color darkens it.
  		auto &tex = textureCache.GetTileTexture(src, tileType, maskType, height);
  
@@ -1610,7 +1618,7 @@ index 72c9cd9..b586e17 100644
  		if (maskType == MaskType::Transparent) {
  			glColor4f(brightness, brightness, brightness, 0.5f);
  		} else {
-@@ -657,21 +683,19 @@ void Gl1DrawTile(Point position, TileType tileType, const uint8_t *src, int_fast
+@@ -657,21 +688,19 @@ void Gl1DrawTile(Point position, TileType tileType, const uint8_t *src, int_fast
  		}
  		int x = position.x;
  		int y = position.y - static_cast<int>(tex.height) + 1;
@@ -1638,15 +1646,62 @@ index 72c9cd9..b586e17 100644
  	}
  }
  
+diff --git a/Source/engine/render/gl1/gl1_renderer.h b/Source/engine/render/gl1/gl1_renderer.h
+index e852ab7..ea2aae9 100644
+--- a/Source/engine/render/gl1/gl1_renderer.h
++++ b/Source/engine/render/gl1/gl1_renderer.h
+@@ -96,6 +96,11 @@ void Gl1DrawClxBlendedTRN(Point position, ClxSprite clx, const uint8_t *trn);
+  */
+ void Gl1DrawClxWithLight(Point position, ClxSprite clx, uint8_t lightLevel);
+ 
++/**
++ * @brief Whether the unlit sprite has an HD texture (HD Textures on and found in a pack).
++ */
++bool Gl1HasHdSprite(ClxSprite clx);
++
+ /**
+  * @brief Draw a CLX sprite with vertex lighting and transparency blending.
+  * @param lightLevel 0 = fully lit, 15 = fully dark.
+diff --git a/Source/engine/render/gl1/gl1_renderer_impl.h b/Source/engine/render/gl1/gl1_renderer_impl.h
+index ae521f1..3dce14c 100644
+--- a/Source/engine/render/gl1/gl1_renderer_impl.h
++++ b/Source/engine/render/gl1/gl1_renderer_impl.h
+@@ -174,7 +174,8 @@ protected:
+ 
+ 	void DrawClxLit(Point position, ClxSprite clx, int lightTableIndex) override
+ 	{
+-		if (lightingMode_ == LightingMode::Vertex) {
++		// HD sprites are unlit; like Vertex lighting, they are darkened by the vertex colour.
++		if (lightingMode_ == LightingMode::Vertex || (lightTableIndex != 0 && Gl1HasHdSprite(clx))) {
+ 			Gl1DrawClxWithLight(position, clx, static_cast<uint8_t>(lightTableIndex));
+ 		} else if (lightTableIndex != 0) {
+ 			Gl1DrawClxTRN(position, clx, LightTables[lightTableIndex].data());
+@@ -185,7 +186,7 @@ protected:
+ 
+ 	void DrawClxLitBlended(Point position, ClxSprite clx, int lightTableIndex) override
+ 	{
+-		if (lightingMode_ == LightingMode::Vertex) {
++		if (lightingMode_ == LightingMode::Vertex || (lightTableIndex != 0 && Gl1HasHdSprite(clx))) {
+ 			Gl1DrawClxWithLightBlended(position, clx, static_cast<uint8_t>(lightTableIndex));
+ 		} else if (lightTableIndex != 0) {
+ 			Gl1DrawClxBlendedTRN(position, clx, LightTables[lightTableIndex].data());
 diff --git a/Source/engine/render/gl1/gl1_texture_cache.cpp b/Source/engine/render/gl1/gl1_texture_cache.cpp
-index b7d0247..16b3653 100644
+index b7d0247..5416627 100644
 --- a/Source/engine/render/gl1/gl1_texture_cache.cpp
 +++ b/Source/engine/render/gl1/gl1_texture_cache.cpp
-@@ -14,7 +14,11 @@
+@@ -9,12 +9,19 @@
+ #include "engine/render/gl1/gl1_texture_cache.h"
+ 
+ #include "engine/render/gl1/gl1_gl.h"
++#include <algorithm>
+ #include <cstring>
++#include <limits>
+ 
  #include "engine/palette.h"
  #include "engine/render/dun_render.hpp"
  #include "levels/dun_tile.hpp"
 +#include "levels/gendung.h"
++#include "lighting.h"
 +#include "options.h"
  #include "utils/clx_decode.hpp"
 +#include "utils/log.hpp"
@@ -1654,18 +1709,18 @@ index b7d0247..16b3653 100644
  
  namespace devilution {
  
-@@ -92,8 +96,33 @@ uint8_t GetTilePixelAlpha(MaskType maskType, TileType tileType, int x, int buffe
+@@ -92,8 +99,67 @@ uint8_t GetTilePixelAlpha(MaskType maskType, TileType tileType, int x, int buffe
  	}
  }
  
 +/**
-+ * @brief Palette indices that colour cycling animates on the current level.
-+ * HD textures cannot follow the animation, so frames using them stay 1x.
++ * @brief Palette indices that change with time or light on the current level: colour cycling
++ * (water, lava), and the light tables that keep lava lit and give blood walls their own colours.
++ * HD textures cannot follow them, so frames using them stay 1x. The range does not depend on the
++ * Color Cycling option, so toggling it needs no cache flush.
 + */
 +HdAnimatedRange CurrentAnimatedRange()
 +{
-+	if (!*GetOptions().Graphics.colorCycling)
-+		return {};
 +	switch (leveltype) {
 +	case DTYPE_CAVES:
 +	case DTYPE_HELL:
@@ -1678,17 +1733,51 @@ index b7d0247..16b3653 100644
 +	}
 +}
 +
- } // namespace
- 
++} // namespace
++
 +bool Gl1TextureCache::HdTexturesEnabled()
 +{
 +	return *GetOptions().Graphics.hdTextures;
 +}
 +
++namespace {
++
++/** @brief Light tables are drawn as a vertex colour on HD sprites, never part of their key. */
++bool IsLightTable(const uint8_t *trn)
++{
++	for (size_t i = 0; i < NumLightingLevels; i++) {
++		if (trn == LightTables[i].data())
++			return true;
++	}
++	return false;
++}
++
+ } // namespace
+ 
++bool Gl1TextureCache::HasHdSprite(ClxSprite clx)
++{
++	if (!HdTexturesEnabled())
++		return false;
++	FlushIfNeeded();
++	const Gl1SpriteCacheKey key { clx.pixelData(), nullptr };
++	if (const auto it = spriteCache_.find(key); it != spriteCache_.end())
++		return it->second.hd;
++	if (hdMissingSprites_.contains(clx.pixelData()))
++		return false;
++	Gl1CachedTexture entry;
++	const HdDumpInfo dumpInfo { "sprite", -1, false, static_cast<int>(leveltype) };
++	if (!TryUseHd(DecodeClxToIndexed(clx, nullptr), HdSpriteVariant, {}, dumpInfo, entry)) {
++		hdMissingSprites_.insert(clx.pixelData());
++		return false;
++	}
++	spriteCache_.emplace(key, entry);
++	return true;
++}
++
  Gl1CachedTexture &Gl1TextureCache::GetSpriteTexture(ClxSprite clx, const uint8_t *trn)
  {
  	FlushIfNeeded();
-@@ -101,6 +130,10 @@ Gl1CachedTexture &Gl1TextureCache::GetSpriteTexture(ClxSprite clx, const uint8_t
+@@ -101,6 +167,10 @@ Gl1CachedTexture &Gl1TextureCache::GetSpriteTexture(ClxSprite clx, const uint8_t
  	auto it = spriteCache_.find(key);
  	if (it != spriteCache_.end()) {
  		Gl1CachedTexture &entry = it->second;
@@ -1699,11 +1788,11 @@ index b7d0247..16b3653 100644
  		if (!entry.needsPaletteUpdate || entry.paletteGeneration == paletteGeneration_) {
  			return entry;
  		}
-@@ -117,6 +150,11 @@ Gl1CachedTexture &Gl1TextureCache::GetSpriteTexture(ClxSprite clx, const uint8_t
+@@ -117,6 +187,11 @@ Gl1CachedTexture &Gl1TextureCache::GetSpriteTexture(ClxSprite clx, const uint8_t
  	}
  
  	Gl1CachedTexture &entry = spriteCache_[key];
-+	if (HdTexturesEnabled() || hdDumper_.enabled()) {
++	if ((HdTexturesEnabled() || hdDumper_.enabled()) && !IsLightTable(trn)) {
 +		const HdDumpInfo dumpInfo { "sprite", -1, trn != nullptr, static_cast<int>(leveltype) };
 +		if (TryUseHd(DecodeClxToIndexed(clx, trn), HdSpriteVariant, {}, dumpInfo, entry))
 +			return entry;
@@ -1711,7 +1800,7 @@ index b7d0247..16b3653 100644
  	std::vector<uint8_t> rgbaData;
  	bool hasAnimatedPalette = false;
  	DecodeClxToRgba(clx, trn, rgbaData, hasAnimatedPalette);
-@@ -137,6 +175,10 @@ Gl1CachedTexture &Gl1TextureCache::GetTileTexture(const uint8_t *frameData,
+@@ -137,6 +212,10 @@ Gl1CachedTexture &Gl1TextureCache::GetTileTexture(const uint8_t *frameData,
  	auto it = tileCache_.find(key);
  	if (it != tileCache_.end()) {
  		Gl1CachedTexture &entry = it->second;
@@ -1722,7 +1811,7 @@ index b7d0247..16b3653 100644
  		if (!entry.needsPaletteUpdate || entry.paletteGeneration == paletteGeneration_) {
  			return entry;
  		}
-@@ -154,6 +196,23 @@ Gl1CachedTexture &Gl1TextureCache::GetTileTexture(const uint8_t *frameData,
+@@ -154,6 +233,23 @@ Gl1CachedTexture &Gl1TextureCache::GetTileTexture(const uint8_t *frameData,
  	}
  
  	Gl1CachedTexture &entry = tileCache_[key];
@@ -1746,7 +1835,7 @@ index b7d0247..16b3653 100644
  	std::vector<uint8_t> rgbaData;
  	uint16_t outWidth = 0;
  	uint16_t outHeight = 0;
-@@ -472,20 +531,22 @@ void Gl1TextureCache::FlushIfNeeded()
+@@ -472,28 +568,136 @@ void Gl1TextureCache::FlushIfNeeded()
  	if (!fullClearPending_)
  		return;
  	fullClearPending_ = false;
@@ -1773,7 +1862,9 @@ index b7d0247..16b3653 100644
  			glDeleteTextures(1, &entry.textureId);
  		}
  	}
-@@ -494,6 +555,109 @@ void Gl1TextureCache::Clear()
+ 	tileCache_.clear();
++	hdMissingSprites_.clear();
+ 
  	paletteGeneration_ = 0;
  }
  
@@ -1797,7 +1888,7 @@ index b7d0247..16b3653 100644
 +	}
 +	if (!hdIndexLoaded_) {
 +		hdIndexLoaded_ = true;
-+		const std::string packsRoot = paths::PrefPath() + "hd";
++		const std::string packsRoot = paths::ConfigPath() + "hd";
 +		hdIndex_.AddPacksIn(packsRoot);
 +		LogInfo("HD textures: {} frames in {}", hdIndex_.size(), packsRoot);
 +	}
@@ -1849,7 +1940,9 @@ index b7d0247..16b3653 100644
 +
 +void Gl1TextureCache::TouchHd(const Gl1HdTextureKey &key, size_t bytes)
 +{
-+	hdLru_.SetBudget(static_cast<size_t>(*GetOptions().Graphics.hdTextureMemory) * 1024 * 1024);
++	// 64-bit arithmetic: 4096 MB does not fit a 32-bit size_t.
++	const uint64_t budget = static_cast<uint64_t>(*GetOptions().Graphics.hdTextureMemory) << 20;
++	hdLru_.SetBudget(static_cast<size_t>(std::min<uint64_t>(budget, std::numeric_limits<size_t>::max())));
 +	hdLru_.Touch(key, bytes);
 +	for (const Gl1HdTextureKey &evicted : hdLru_.TakeEvictions()) {
 +		const auto it = hdTextures_.find(evicted);
@@ -1885,7 +1978,7 @@ index b7d0247..16b3653 100644
  #endif // DEVILUTIONX_GL1_RENDERER
 \ No newline at end of file
 diff --git a/Source/engine/render/gl1/gl1_texture_cache.h b/Source/engine/render/gl1/gl1_texture_cache.h
-index b818fc0..a147357 100644
+index b818fc0..8330a6c 100644
 --- a/Source/engine/render/gl1/gl1_texture_cache.h
 +++ b/Source/engine/render/gl1/gl1_texture_cache.h
 @@ -11,14 +11,38 @@
@@ -1940,7 +2033,20 @@ index b818fc0..a147357 100644
  };
  
  /**
-@@ -131,10 +161,15 @@ public:
+@@ -99,6 +129,12 @@ public:
+ 	 */
+ 	Gl1CachedTexture &GetSpriteTexture(ClxSprite clx, const uint8_t *trn);
+ 
++	/**
++	 * @brief Whether the untranslated sprite has an HD texture. Looks it up if needed, but never
++	 * creates a 1x texture.
++	 */
++	bool HasHdSprite(ClxSprite clx);
++
+ 	/**
+ 	 * @brief Get or create a cached texture for a dungeon tile.
+ 	 * @param frameData Raw frame data pointer (from GetDunFrame).
+@@ -131,10 +167,15 @@ public:
  	void FlushIfNeeded();
  
  	/**
@@ -1957,7 +2063,7 @@ index b818fc0..a147357 100644
  	/**
  	 * @brief Get the current palette generation counter.
  	 */
-@@ -186,6 +221,34 @@ private:
+@@ -186,6 +227,36 @@ private:
  	 */
  	void UploadTexture(Gl1CachedTexture &entry, uint16_t width, uint16_t height, const uint8_t *rgbaData);
  
@@ -1985,6 +2091,8 @@ index b818fc0..a147357 100644
 +	bool hdIndexLoaded_ = false;
 +	/** Keys whose HD image failed to load (logged once, not retried). */
 +	std::unordered_set<Gl1HdTextureKey, Gl1HdTextureKeyHash> hdFailed_;
++	/** Untranslated sprites known to have no HD texture (see HasHdSprite). */
++	std::unordered_set<const uint8_t *> hdMissingSprites_;
 +	/** Frames kept at 1x because colour cycling animates them. */
 +	size_t hdAnimatedSkipped_ = 0;
 +	HdDumper hdDumper_ { HdDumper::DirFromEnvironment() };

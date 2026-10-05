@@ -1,5 +1,5 @@
 diff --git a/CMake/Definitions.cmake b/CMake/Definitions.cmake
-index 3c4eacf..8fa13fc 100644
+index 3c4eacf..7545736 100644
 --- a/CMake/Definitions.cmake
 +++ b/CMake/Definitions.cmake
 @@ -19,6 +19,7 @@ foreach(
@@ -10,20 +10,27 @@ index 3c4eacf..8fa13fc 100644
    UNPACKED_MPQS
    UNPACKED_SAVES
    DEVILUTIONX_WINDOWS_NO_WCHAR
-@@ -38,7 +39,7 @@ foreach(
+@@ -38,6 +39,7 @@ foreach(
    DEFAULT_AUDIO_CHANNELS
    DEFAULT_AUDIO_BUFFER_SIZE
    DEFAULT_AUDIO_RESAMPLING_QUALITY
--  DEFAULT_PER_PIXEL_LIGHTING
 +  DEFAULT_LIGHTING_MODE
+   DEFAULT_PER_PIXEL_LIGHTING
    SDL1_VIDEO_MODE_BPP
    SDL1_VIDEO_MODE_FLAGS
-   SDL1_VIDEO_MODE_SVID_FLAGS
 diff --git a/CMake/Tests.cmake b/CMake/Tests.cmake
-index b6ea2d6..1bbd8d1 100644
+index b6ea2d6..627c33a 100644
 --- a/CMake/Tests.cmake
 +++ b/CMake/Tests.cmake
-@@ -137,24 +137,13 @@ target_link_dependencies(clx_render_benchmark
+@@ -18,6 +18,7 @@ set(tests
+   cursor_test
+   dead_test
+   diablo_test
++  display_dpi_test
+   drlg_common_test
+   drlg_l1_test
+   drlg_l2_test
+@@ -137,24 +138,13 @@ target_link_dependencies(clx_render_benchmark
  target_link_dependencies(crawl_test PRIVATE libdevilutionx_crawl)
  target_link_dependencies(crawl_benchmark PRIVATE libdevilutionx_crawl)
  target_link_dependencies(data_file_test PRIVATE libdevilutionx_txtdata app_fatal_for_testing language_for_testing)
@@ -50,7 +57,7 @@ index b6ea2d6..1bbd8d1 100644
  target_link_dependencies(palette_blending_test PRIVATE libdevilutionx_palette_blending DevilutionX::SDL libdevilutionx_strings GTest::gmock app_fatal_for_testing)
  target_link_dependencies(palette_blending_benchmark
    PRIVATE
-@@ -181,10 +170,12 @@ if(DEVILUTIONX_SCREENSHOT_FORMAT STREQUAL DEVILUTIONX_SCREENSHOT_FORMAT_PNG AND
+@@ -181,10 +171,12 @@ if(DEVILUTIONX_SCREENSHOT_FORMAT STREQUAL DEVILUTIONX_SCREENSHOT_FORMAT_PNG AND
      app_fatal_for_testing
      language_for_testing
      libdevilutionx_primitive_render
@@ -5065,10 +5072,10 @@ index 0000000..1571003
 +#endif
 diff --git a/Source/engine/render/gl1/gl1_renderer.cpp b/Source/engine/render/gl1/gl1_renderer.cpp
 new file mode 100644
-index 0000000..72c9cd9
+index 0000000..6260f1f
 --- /dev/null
 +++ b/Source/engine/render/gl1/gl1_renderer.cpp
-@@ -0,0 +1,1215 @@
+@@ -0,0 +1,1218 @@
 +/**
 + * @file gl1_renderer.cpp
 + *
@@ -6267,6 +6274,9 @@ index 0000000..72c9cd9
 +	EnsureFrameBegun();
 +
 +	const float alpha = (fadeLevel >= 256) ? 1.0f : (static_cast<float>(fadeLevel) / 256.0f);
++	// The renderer-drawn cursor leaves blending disabled.
++	glEnable(GL_BLEND);
++	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 +	glDisable(GL_TEXTURE_2D);
 +	glDisable(GL_ALPHA_TEST);
 +	glColor4f(0.0f, 0.0f, 0.0f, alpha);
@@ -10503,10 +10513,10 @@ index 0000000..074139e
 +} // namespace devilution
 diff --git a/Source/engine/render/software/software_renderer.cpp b/Source/engine/render/software/software_renderer.cpp
 new file mode 100644
-index 0000000..2aff95c
+index 0000000..d3423ae
 --- /dev/null
 +++ b/Source/engine/render/software/software_renderer.cpp
-@@ -0,0 +1,1501 @@
+@@ -0,0 +1,1518 @@
 +/**
 + * @file software_renderer.cpp
 + *
@@ -10958,6 +10968,22 @@ index 0000000..2aff95c
 +	if (HeadlessMode)
 +		return;
 +
++	PresentFrame();
++
++	// Nothing calls BeginFrame(): restore the pixels under the cursor and reset the dirty
++	// regions here, so the next frame starts from the drawn scene, as UndrawCursor() did.
++	UndrawCursorFromBuffer();
++	numDirtyRects_ = 0;
++	fullScreenDirty_ = false;
++}
++
++void SoftwareRenderer::PresentFrame()
++{
++	// Only the game view marks the regions it changed (see MarkDirtyRegions). Frames without
++	// marks (menus, progress, fades) are copied in full, as BltFast(nullptr, nullptr) did.
++	if (numDirtyRects_ == 0)
++		fullScreenDirty_ = true;
++
 +	// Composite the software cursor before presenting.
 +	DrawCursorToBuffer();
 +
@@ -11173,6 +11199,7 @@ index 0000000..2aff95c
 +	// fadeLevel: 0 = fully visible, 256 = fully black.
 +	// Compute faded palette from system_palette and apply.
 +	const unsigned visibility = 256 - static_cast<unsigned>(fadeLevel);
++	fullScreenDirty_ = true;
 +
 +	std::array<SDL_Color, 256> fadedColors;
 +	ApplyFadeLevel(visibility, fadedColors.data(), system_palette.data());
@@ -12010,10 +12037,10 @@ index 0000000..2aff95c
 +} // namespace devilution
 diff --git a/Source/engine/render/software/software_renderer.h b/Source/engine/render/software/software_renderer.h
 new file mode 100644
-index 0000000..ad0e013
+index 0000000..4af0dc6
 --- /dev/null
 +++ b/Source/engine/render/software/software_renderer.h
-@@ -0,0 +1,184 @@
+@@ -0,0 +1,186 @@
 +/**
 + * @file software_renderer.h
 + *
@@ -12195,6 +12222,8 @@ index 0000000..ad0e013
 +
 +	void UndrawCursorFromBuffer();
 +	void DrawCursorToBuffer();
++	/** @brief Composites the cursor, applies the fade and presents the frame. */
++	void PresentFrame();
 +};
 +
 +} // namespace devilution
@@ -16159,7 +16188,7 @@ index 5f287ef..649065d 100644
  		IsSVidVideoMode = false;
  	}
 diff --git a/Source/utils/display.cpp b/Source/utils/display.cpp
-index b57438f..1951d12 100644
+index b57438f..ab4dce9 100644
 --- a/Source/utils/display.cpp
 +++ b/Source/utils/display.cpp
 @@ -1,7 +1,6 @@
@@ -16237,12 +16266,13 @@ index b57438f..1951d12 100644
  SDL_Window *ghMainWnd;
  
  Size forceResolution;
-@@ -431,19 +469,17 @@ float GetDpiScalingFactor()
+@@ -431,19 +469,18 @@ float GetDpiScalingFactor()
  	}
  	return dispScale;
  #elif !defined(USE_SDL1)
 -	if (renderer == nullptr)
-+	if (!GetRenderer().HasPresentationLayer())
++	// SpawnWindow asks for the preferred window size before the renderer exists.
++	if (CurrentRenderer == nullptr || !GetRenderer().HasPresentationLayer())
  		return 1.0F;
  
 -	int renderWidth;
@@ -16261,7 +16291,7 @@ index b57438f..1951d12 100644
  
  	return std::min(hfactor, vhfactor);
  #else
-@@ -477,8 +513,11 @@ void SetVideoModeToPrimary(bool fullscreen, int width, int height)
+@@ -477,8 +514,11 @@ void SetVideoModeToPrimary(bool fullscreen, int width, int height)
  	flags |= Get3DSScalingFlag(*GetOptions().Graphics.fitToScreen, width, height);
  #endif
  	SetVideoMode(width, height, SDL1_VIDEO_MODE_BPP, flags);
@@ -16275,7 +16305,7 @@ index b57438f..1951d12 100644
  }
  #endif
  
-@@ -585,11 +624,32 @@ bool SpawnWindow(const char *lpWindowName)
+@@ -585,11 +625,32 @@ bool SpawnWindow(const char *lpWindowName)
  #endif
  #endif
  
@@ -16309,7 +16339,7 @@ index b57438f..1951d12 100644
  	if (*GetOptions().Gameplay.grabInput)
  		SDL_WM_GrabInput(SDL_GRAB_ON);
  	atexit(SDL_VideoQuit); // Without this video mode is not restored after fullscreen.
-@@ -612,16 +672,39 @@ bool SpawnWindow(const char *lpWindowName)
+@@ -612,16 +673,39 @@ bool SpawnWindow(const char *lpWindowName)
  		flags |= SDL_WINDOW_FULLSCREEN;
  	}
  
@@ -16353,7 +16383,7 @@ index b57438f..1951d12 100644
  #if defined(DEVILUTIONX_DISPLAY_PIXELFORMAT)
  	SDL_DisplayMode nearestDisplayMode = GetNearestDisplayMode(windowSize, DEVILUTIONX_DISPLAY_PIXELFORMAT);
  #if USE_SDL3
-@@ -669,13 +752,23 @@ bool SpawnWindow(const char *lpWindowName)
+@@ -669,13 +753,23 @@ bool SpawnWindow(const char *lpWindowName)
  #endif
  	refreshDelay = 1000000 / refreshRate;
  
@@ -16378,7 +16408,7 @@ index b57438f..1951d12 100644
  	    && GetDpiScalingFactor() > 1.0F) {
  		const Size currentSize { gnScreenWidth, gnScreenHeight };
  		const Size preferredSize = GetPreferredWindowSize();
-@@ -698,26 +791,7 @@ bool SpawnWindow(const char *lpWindowName)
+@@ -698,26 +792,7 @@ bool SpawnWindow(const char *lpWindowName)
  #ifndef USE_SDL1
  void ReinitializeTexture()
  {
@@ -16406,7 +16436,7 @@ index b57438f..1951d12 100644
  }
  
  void ReinitializeIntegerScale()
-@@ -726,21 +800,7 @@ void ReinitializeIntegerScale()
+@@ -726,21 +801,7 @@ void ReinitializeIntegerScale()
  		ResizeWindow();
  		return;
  	}
@@ -16429,7 +16459,7 @@ index b57438f..1951d12 100644
  }
  #endif
  
-@@ -749,67 +809,211 @@ void ReinitializeRenderer()
+@@ -749,67 +810,211 @@ void ReinitializeRenderer()
  	if (ghMainWnd == nullptr)
  		return;
  
@@ -16681,7 +16711,7 @@ index b57438f..1951d12 100644
  
  void SetFullscreenMode()
  {
-@@ -818,10 +1022,11 @@ void SetFullscreenMode()
+@@ -818,10 +1023,11 @@ void SetFullscreenMode()
  	if (*GetOptions().Graphics.fullscreen) {
  		flags |= SDL_FULLSCREEN;
  	}
@@ -16694,7 +16724,7 @@ index b57438f..1951d12 100644
  #else
  	// When switching from windowed to "true fullscreen",
  	// update the display mode of the window before changing the
-@@ -856,7 +1061,7 @@ void SetFullscreenMode()
+@@ -856,7 +1062,7 @@ void SetFullscreenMode()
  		// Because "true fullscreen" is locked into specific resolutions based on the modes
  		// supported by the display, the resolution may have changed when fullscreen was toggled
  		ReinitializeRenderer();
@@ -16703,7 +16733,7 @@ index b57438f..1951d12 100644
  	}
  	InitializeVirtualGamepad();
  #endif
-@@ -888,8 +1093,11 @@ void ResizeWindow()
+@@ -888,8 +1094,11 @@ void ResizeWindow()
  #endif
  	}
  
@@ -16717,7 +16747,7 @@ index b57438f..1951d12 100644
  	if (upscaleChanged && *GetOptions().Graphics.fullscreen) {
  #ifdef USE_SDL3
  		if (!SDL_SetWindowFullscreen(ghMainWnd, *GetOptions().Graphics.fullscreen)) ErrSdl();
-@@ -909,86 +1117,15 @@ void ResizeWindow()
+@@ -909,86 +1118,15 @@ void ResizeWindow()
  
  #ifndef USE_SDL1
  #ifdef USE_SDL3
@@ -17003,6 +17033,32 @@ index 21e771c..0796aff 100644
  // Sets the palette's colors and:
  // SDL3 and SDL2: Points the surface's palette to the given palette if necessary.
  // SDL1: Sets the surface's colors.
+diff --git a/test/display_dpi_test.cpp b/test/display_dpi_test.cpp
+new file mode 100644
+index 0000000..51eea35
+--- /dev/null
++++ b/test/display_dpi_test.cpp
+@@ -0,0 +1,20 @@
++#include <gtest/gtest.h>
++
++#include "engine/render/renderer.h"
++#include "utils/ui_fwd.h"
++
++namespace devilution {
++namespace {
++
++TEST(DisplayDpiTest, ScalingFactorWithoutRendererIsOne)
++{
++	// SpawnWindow computes the preferred window size (HiDPI integer scaling) before the
++	// renderer exists; this must not touch the renderer.
++	Renderer *const saved = CurrentRenderer;
++	CurrentRenderer = nullptr;
++	EXPECT_EQ(GetDpiScalingFactor(), 1.0F);
++	CurrentRenderer = saved;
++}
++
++} // namespace
++} // namespace devilution
 diff --git a/test/dun_render_benchmark.cpp b/test/dun_render_benchmark.cpp
 index 3a66cf6..36a7543 100644
 --- a/test/dun_render_benchmark.cpp
