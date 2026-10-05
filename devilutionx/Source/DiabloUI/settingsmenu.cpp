@@ -248,6 +248,11 @@ bool ChangeOptionValue(OptionEntryBase *pOption, size_t listIndex)
 		GetRenderer().SetLightingMode(*GetOptions().Graphics.lightingMode);
 	}
 #endif
+#ifdef DEVILUTIONX_GL1_RENDERER
+	if (pOption == &GetOptions().Graphics.hdTextures) {
+		GetRenderer().InvalidateTextureCache();
+	}
+#endif
 	if (pOption == &GetOptions().Graphics.lightingMode) {
 		GetRenderer().SetLightingMode(*GetOptions().Graphics.lightingMode);
 	}

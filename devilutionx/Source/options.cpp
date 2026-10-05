@@ -851,6 +851,10 @@ GraphicsOptions::GraphicsOptions()
                                                                                                                                 { LightingMode::Tile, N_("Tile") },
                                                                                                                                 { LightingMode::TileSmooth, N_("Tile Smooth") },
                                                                                                                             })
+#ifdef DEVILUTIONX_GL1_RENDERER
+    , hdTextures("HD Textures", OptionEntryFlags::None, N_("HD Textures"), N_("Replace sprites and tiles with upscaled images from the HD packs in the hd folder. OpenGL renderer only."), false)
+    , hdTextureMemory("HD Texture Memory MB", OptionEntryFlags::None, N_("HD Texture Memory"), N_("Video memory for HD textures, in MB. The least recently drawn are freed first."), 1024, { 256, 512, 1024, 2048, 4096 })
+#endif
     , colorCycling("Color Cycling", OptionEntryFlags::None, N_("Color Cycling"), N_("Color cycling effect used for water, lava, and acid animation."), true)
     , alternateNestArt("Alternate nest art", OptionEntryFlags::OnlyHellfire | OptionEntryFlags::CantChangeInGame, N_("Alternate nest art"), N_("The game will use an alternative palette for Hellfire’s nest tileset."), false)
 #if SDL_VERSION_ATLEAST(2, 0, 0)
@@ -889,6 +893,8 @@ std::vector<OptionEntryBase *> GraphicsOptions::GetEntries()
 		&showFPS,
 #ifdef DEVILUTIONX_GL1_RENDERER
 		&lightingMode,
+		&hdTextures,
+		&hdTextureMemory,
 #else
 		&perPixelLighting,
 #endif

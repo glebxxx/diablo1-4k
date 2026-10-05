@@ -571,6 +571,12 @@ struct GraphicsOptions : OptionCategoryBase {
 #endif
 	/** @brief Lighting quality mode. */
 	OptionEntryEnum<LightingMode> lightingMode;
+#ifdef DEVILUTIONX_GL1_RENDERER
+	/** @brief Replace sprites and tiles with images from HD packs (OpenGL renderer). */
+	OptionEntryBoolean hdTextures;
+	/** @brief Video memory budget for HD textures, in MB. */
+	OptionEntryInt<int> hdTextureMemory;
+#endif
 	/** @brief Enable color cycling animations. */
 	OptionEntryBoolean colorCycling;
 	/** @brief Use alternate nest palette. */

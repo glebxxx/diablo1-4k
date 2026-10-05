@@ -4391,6 +4391,62 @@ msgstr "Попиксельное освещение"
 msgid "Subtile lighting for smoother light gradients."
 msgstr "Тонкое освещение для более плавных световых градиентов."
 
+#: Source/options.cpp
+msgid "Renderer"
+msgstr "Рендерер"
+
+#: Source/options.cpp
+msgid "Rendering backend to use."
+msgstr "Способ отрисовки графики."
+
+#: Source/options.cpp
+msgid "Auto"
+msgstr "Авто"
+
+#: Source/options.cpp
+msgid "OpenGL"
+msgstr "OpenGL"
+
+#: Source/options.cpp
+msgid "Software"
+msgstr "Программный"
+
+#: Source/options.cpp
+msgid "Lighting"
+msgstr "Освещение"
+
+#: Source/options.cpp
+msgid "Lighting quality mode."
+msgstr "Качество освещения."
+
+#: Source/options.cpp
+msgid "Vertex"
+msgstr "По вершинам"
+
+#: Source/options.cpp
+msgid "Tile"
+msgstr "По плиткам"
+
+#: Source/options.cpp
+msgid "Tile Smooth"
+msgstr "По плиткам, плавное"
+
+#: Source/options.cpp
+msgid "HD Textures"
+msgstr "HD-текстуры"
+
+#: Source/options.cpp
+msgid "Replace sprites and tiles with upscaled images from the HD packs in the hd folder. OpenGL renderer only."
+msgstr "Заменяет спрайты и плитки увеличенными изображениями из HD-паков в папке hd. Только с рендерером OpenGL."
+
+#: Source/options.cpp
+msgid "HD Texture Memory"
+msgstr "Память для HD-текстур"
+
+#: Source/options.cpp
+msgid "Video memory for HD textures, in MB. The least recently drawn are freed first."
+msgstr "Видеопамять для HD-текстур, в МБ. Первыми освобождаются те, что давно не отрисовывались."
+
 #: Source/options.cpp:792
 msgid "Color Cycling"
 msgstr "Цветовой цикл"

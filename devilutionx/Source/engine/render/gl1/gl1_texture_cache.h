@@ -11,13 +11,37 @@
 #ifdef DEVILUTIONX_GL1_RENDERER
 
 #include <cstdint>
+#include <span>
+#include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "engine/clx_sprite.hpp"
 #include "engine/render/dun_render.hpp"
+#include "engine/render/gl1/gl1_hd_dump.hpp"
+#include "engine/render/gl1/gl1_hd_pack.hpp"
 
 namespace devilution {
+
+/**
+ * @brief An HD texture: the frame key plus the tile mask (`HdSpriteVariant` for sprites).
+ */
+struct Gl1HdTextureKey {
+	HdKey key;
+	uint8_t variant;
+
+	bool operator==(const Gl1HdTextureKey &other) const = default;
+};
+
+constexpr uint8_t HdSpriteVariant = 0xFF;
+
+struct Gl1HdTextureKeyHash {
+	size_t operator()(const Gl1HdTextureKey &key) const noexcept
+	{
+		return HdKeyHash {}(key.key) ^ key.variant;
+	}
+};
 
 /**
  * @brief A cached OpenGL texture with metadata.
@@ -30,6 +54,12 @@ struct Gl1CachedTexture {
 	bool needsPaletteUpdate = false;
 	/** The palette generation at which this texture was last uploaded. */
 	uint32_t paletteGeneration = 0;
+	/**
+	 * If true, `textureId` is an HD texture (premultiplied alpha, `HdPackScale` times the size)
+	 * owned by the HD store. `width` and `height` stay the 1x size, which is the size drawn.
+	 */
+	bool hd = false;
+	Gl1HdTextureKey hdKey {};
 };
 
 /**
@@ -131,9 +161,14 @@ public:
 	void FlushIfNeeded();
 
 	/**
-	 * @brief Delete all GL textures and clear the cache.
+	 * @brief Delete all GL textures, including HD textures, and clear the cache.
 	 */
 	void Clear();
+
+	/**
+	 * @brief Whether the sprite and tile cache misses look up HD packs (option "HD Textures").
+	 */
+	[[nodiscard]] static bool HdTexturesEnabled();
 
 	/**
 	 * @brief Get the current palette generation counter.
@@ -185,6 +220,34 @@ private:
 	 * @brief Upload RGBA data to a GL texture (creating or updating).
 	 */
 	void UploadTexture(Gl1CachedTexture &entry, uint16_t width, uint16_t height, const uint8_t *rgbaData);
+
+	/** @brief Delete the cached 1x textures; HD textures stay loaded. */
+	void ClearPaletteDependent();
+
+	/**
+	 * @brief Dump the frame (dump mode) and, if HD textures are on, point `entry` at its
+	 * HD texture.
+	 * @param alpha1x Per-pixel alpha of the 1x frame (masked tiles), empty for sprites.
+	 * @return true if `entry` now uses an HD texture.
+	 */
+	bool TryUseHd(const HdIndexedFrame &frame, uint8_t variant, std::span<const uint8_t> alpha1x,
+	    const HdDumpInfo &dumpInfo, Gl1CachedTexture &entry);
+
+	/** @brief Mark an HD texture as used and free least recently used ones over the budget. */
+	void TouchHd(const Gl1HdTextureKey &key, size_t bytes);
+
+	/** @brief Delete every HD texture and forget the pack index. */
+	void ReleaseHd();
+
+	std::unordered_map<Gl1HdTextureKey, uint32_t, Gl1HdTextureKeyHash> hdTextures_;
+	HdLru<Gl1HdTextureKey, Gl1HdTextureKeyHash> hdLru_;
+	HdPackIndex hdIndex_;
+	bool hdIndexLoaded_ = false;
+	/** Keys whose HD image failed to load (logged once, not retried). */
+	std::unordered_set<Gl1HdTextureKey, Gl1HdTextureKeyHash> hdFailed_;
+	/** Frames kept at 1x because colour cycling animates them. */
+	size_t hdAnimatedSkipped_ = 0;
+	HdDumper hdDumper_ { HdDumper::DirFromEnvironment() };
 
 	std::unordered_map<Gl1SpriteCacheKey, Gl1CachedTexture, Gl1SpriteCacheKeyHash> spriteCache_;
 	std::unordered_map<Gl1TileCacheKey, Gl1CachedTexture, Gl1TileCacheKeyHash> tileCache_;

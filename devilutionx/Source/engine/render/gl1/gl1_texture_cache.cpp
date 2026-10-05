@@ -14,7 +14,11 @@
 #include "engine/palette.h"
 #include "engine/render/dun_render.hpp"
 #include "levels/dun_tile.hpp"
+#include "levels/gendung.h"
+#include "options.h"
 #include "utils/clx_decode.hpp"
+#include "utils/log.hpp"
+#include "utils/paths.h"
 
 namespace devilution {
 
@@ -92,7 +96,32 @@ uint8_t GetTilePixelAlpha(MaskType maskType, TileType tileType, int x, int buffe
 	}
 }
 
+/**
+ * @brief Palette indices that colour cycling animates on the current level.
+ * HD textures cannot follow the animation, so frames using them stay 1x.
+ */
+HdAnimatedRange CurrentAnimatedRange()
+{
+	if (!*GetOptions().Graphics.colorCycling)
+		return {};
+	switch (leveltype) {
+	case DTYPE_CAVES:
+	case DTYPE_HELL:
+	case DTYPE_CRYPT:
+		return { 1, 31 };
+	case DTYPE_NEST:
+		return { 1, 15 };
+	default:
+		return {};
+	}
+}
+
 } // namespace
+
+bool Gl1TextureCache::HdTexturesEnabled()
+{
+	return *GetOptions().Graphics.hdTextures;
+}
 
 Gl1CachedTexture &Gl1TextureCache::GetSpriteTexture(ClxSprite clx, const uint8_t *trn)
 {
@@ -101,6 +130,10 @@ Gl1CachedTexture &Gl1TextureCache::GetSpriteTexture(ClxSprite clx, const uint8_t
 	auto it = spriteCache_.find(key);
 	if (it != spriteCache_.end()) {
 		Gl1CachedTexture &entry = it->second;
+		if (entry.hd) {
+			TouchHd(entry.hdKey, 0);
+			return entry;
+		}
 		if (!entry.needsPaletteUpdate || entry.paletteGeneration == paletteGeneration_) {
 			return entry;
 		}
@@ -117,6 +150,11 @@ Gl1CachedTexture &Gl1TextureCache::GetSpriteTexture(ClxSprite clx, const uint8_t
 	}
 
 	Gl1CachedTexture &entry = spriteCache_[key];
+	if (HdTexturesEnabled() || hdDumper_.enabled()) {
+		const HdDumpInfo dumpInfo { "sprite", -1, trn != nullptr, static_cast<int>(leveltype) };
+		if (TryUseHd(DecodeClxToIndexed(clx, trn), HdSpriteVariant, {}, dumpInfo, entry))
+			return entry;
+	}
 	std::vector<uint8_t> rgbaData;
 	bool hasAnimatedPalette = false;
 	DecodeClxToRgba(clx, trn, rgbaData, hasAnimatedPalette);
@@ -137,6 +175,10 @@ Gl1CachedTexture &Gl1TextureCache::GetTileTexture(const uint8_t *frameData,
 	auto it = tileCache_.find(key);
 	if (it != tileCache_.end()) {
 		Gl1CachedTexture &entry = it->second;
+		if (entry.hd) {
+			TouchHd(entry.hdKey, 0);
+			return entry;
+		}
 		if (!entry.needsPaletteUpdate || entry.paletteGeneration == paletteGeneration_) {
 			return entry;
 		}
@@ -154,6 +196,23 @@ Gl1CachedTexture &Gl1TextureCache::GetTileTexture(const uint8_t *frameData,
 	}
 
 	Gl1CachedTexture &entry = tileCache_[key];
+	if (HdTexturesEnabled() || hdDumper_.enabled()) {
+		// The HD texture is unlit (the light table is applied as a vertex colour when drawing).
+		const HdIndexedFrame frame = DecodeDunTileToIndexed(frameData, tileType, static_cast<int>(height));
+		std::vector<uint8_t> alpha1x;
+		uint8_t variant = static_cast<uint8_t>(MaskType::Solid);
+		if (maskType == MaskType::Left || maskType == MaskType::Right) {
+			variant = static_cast<uint8_t>(maskType);
+			alpha1x.resize(frame.pixels.size());
+			for (int y = 0; y < frame.height; ++y) {
+				for (int x = 0; x < frame.width; ++x)
+					alpha1x[static_cast<size_t>(y) * frame.width + x] = GetTilePixelAlpha(maskType, tileType, x, y, frame.height);
+			}
+		}
+		const HdDumpInfo dumpInfo { "tile", static_cast<int>(tileType), false, static_cast<int>(leveltype) };
+		if (TryUseHd(frame, variant, alpha1x, dumpInfo, entry))
+			return entry;
+	}
 	std::vector<uint8_t> rgbaData;
 	uint16_t outWidth = 0;
 	uint16_t outHeight = 0;
@@ -472,26 +531,131 @@ void Gl1TextureCache::FlushIfNeeded()
 	if (!fullClearPending_)
 		return;
 	fullClearPending_ = false;
-	Clear();
+	ClearPaletteDependent();
+	if (!HdTexturesEnabled())
+		ReleaseHd();
 }
 
-void Gl1TextureCache::Clear()
+void Gl1TextureCache::ClearPaletteDependent()
 {
 	for (auto &[key, entry] : spriteCache_) {
-		if (entry.textureId != 0) {
+		if (entry.textureId != 0 && !entry.hd) {
 			glDeleteTextures(1, &entry.textureId);
 		}
 	}
 	spriteCache_.clear();
 
 	for (auto &[key, entry] : tileCache_) {
-		if (entry.textureId != 0) {
+		if (entry.textureId != 0 && !entry.hd) {
 			glDeleteTextures(1, &entry.textureId);
 		}
 	}
 	tileCache_.clear();
 
 	paletteGeneration_ = 0;
+}
+
+void Gl1TextureCache::Clear()
+{
+	ClearPaletteDependent();
+	ReleaseHd();
+}
+
+bool Gl1TextureCache::TryUseHd(const HdIndexedFrame &frame, uint8_t variant, std::span<const uint8_t> alpha1x,
+    const HdDumpInfo &dumpInfo, Gl1CachedTexture &entry)
+{
+	const HdKey key = ComputeHdKey(frame);
+	if (hdDumper_.enabled())
+		hdDumper_.Dump(key, frame, logical_palette, dumpInfo);
+	if (!HdTexturesEnabled())
+		return false;
+	if (UsesAnimatedIndices(frame, CurrentAnimatedRange())) {
+		++hdAnimatedSkipped_;
+		return false;
+	}
+	if (!hdIndexLoaded_) {
+		hdIndexLoaded_ = true;
+		const std::string packsRoot = paths::PrefPath() + "hd";
+		hdIndex_.AddPacksIn(packsRoot);
+		LogInfo("HD textures: {} frames in {}", hdIndex_.size(), packsRoot);
+	}
+
+	const Gl1HdTextureKey hdKey { key, variant };
+	auto it = hdTextures_.find(hdKey);
+	if (it == hdTextures_.end()) {
+		const HdPackEntry *packEntry = hdIndex_.Find(key);
+		if (packEntry == nullptr || hdFailed_.contains(hdKey))
+			return false;
+		std::string error;
+		const std::optional<HdImage> image = LoadHdImage(*packEntry, frame, alpha1x, &error);
+		if (!image) {
+			hdFailed_.insert(hdKey);
+			LogWarn("HD texture {} not used: {}", HdKeyToHex(key), error);
+			return false;
+		}
+		uint32_t textureId = 0;
+		glGenTextures(1, &textureId);
+		glBindTexture(GL_TEXTURE_2D, textureId);
+		size_t bytes = image->rgba.size();
+#ifdef GL_GENERATE_MIPMAP
+		// HD textures are usually drawn smaller than their 4x size.
+		glTexParameteri(GL_TEXTURE_2D, GL_GENERATE_MIPMAP, GL_TRUE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+		bytes += bytes / 3;
+#else
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+#endif
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image->width, image->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image->rgba.data());
+		hdTextures_.emplace(hdKey, textureId);
+		TouchHd(hdKey, bytes);
+	} else {
+		TouchHd(hdKey, 0);
+	}
+
+	entry.textureId = hdTextures_.at(hdKey);
+	entry.width = frame.width;
+	entry.height = frame.height;
+	entry.needsPaletteUpdate = false;
+	entry.paletteGeneration = paletteGeneration_;
+	entry.hd = true;
+	entry.hdKey = hdKey;
+	return true;
+}
+
+void Gl1TextureCache::TouchHd(const Gl1HdTextureKey &key, size_t bytes)
+{
+	hdLru_.SetBudget(static_cast<size_t>(*GetOptions().Graphics.hdTextureMemory) * 1024 * 1024);
+	hdLru_.Touch(key, bytes);
+	for (const Gl1HdTextureKey &evicted : hdLru_.TakeEvictions()) {
+		const auto it = hdTextures_.find(evicted);
+		if (it == hdTextures_.end())
+			continue;
+		glDeleteTextures(1, &it->second);
+		hdTextures_.erase(it);
+		const auto usesEvicted = [&evicted](const auto &item) { return item.second.hd && item.second.hdKey == evicted; };
+		std::erase_if(spriteCache_, usesEvicted);
+		std::erase_if(tileCache_, usesEvicted);
+	}
+}
+
+void Gl1TextureCache::ReleaseHd()
+{
+	std::erase_if(spriteCache_, [](const auto &item) { return item.second.hd; });
+	std::erase_if(tileCache_, [](const auto &item) { return item.second.hd; });
+	for (auto &[key, textureId] : hdTextures_)
+		glDeleteTextures(1, &textureId);
+	hdTextures_.clear();
+	hdLru_.Clear();
+	hdIndex_.Clear();
+	hdIndexLoaded_ = false;
+	hdFailed_.clear();
+	if (hdAnimatedSkipped_ != 0) {
+		LogVerbose("HD textures: {} frames kept at 1x because of colour cycling", hdAnimatedSkipped_);
+		hdAnimatedSkipped_ = 0;
+	}
 }
 
 } // namespace devilution

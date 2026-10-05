@@ -182,6 +182,42 @@ constexpr float TileLightBrightness[16] = {
 	0.000f, // Level 15: fully dark
 };
 
+/**
+ * @brief Draws a cached sprite or tile texture at its 1x size.
+ *
+ * HD textures hold premultiplied alpha, so they blend with GL_ONE and the vertex colour's
+ * RGB is scaled by its alpha.
+ */
+void DrawCachedTexture(const Gl1CachedTexture &tex, int x, int y)
+{
+	if (!tex.hd) {
+		DrawTexturedQuad(tex.textureId, x, y, tex.width, tex.height);
+		return;
+	}
+	GLfloat color[4];
+	glGetFloatv(GL_CURRENT_COLOR, color);
+	glColor4f(color[0] * color[3], color[1] * color[3], color[2] * color[3], color[3]);
+	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+	DrawTexturedQuad(tex.textureId, x, y, tex.width, tex.height);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glColor4fv(color);
+}
+
+/** @brief Brightness of a tile drawn with the light table `tbl` (nullptr = fully lit). */
+float TileBrightness(const uint8_t *tbl)
+{
+	uint8_t lightLevel = 0;
+	if (tbl != nullptr) {
+		for (size_t i = 0; i < NumLightingLevels; i++) {
+			if (tbl == LightTables[i].data()) {
+				lightLevel = static_cast<uint8_t>(i);
+				break;
+			}
+		}
+	}
+	return TileLightBrightness[std::min<uint8_t>(lightLevel, 15)];
+}
+
 void SetVertexLighting(uint8_t lightLevel)
 {
 	float brightness = SpriteLightBrightness[std::min<uint8_t>(lightLevel, 15)];
@@ -570,7 +606,7 @@ void Gl1DrawClx(Point position, ClxSprite clx)
 	int y = position.y - clx.height() + 1;
 	EnsureFrameBegun();
 	glColor4f(1, 1, 1, 1);
-	DrawTexturedQuad(tex.textureId, x, y, tex.width, tex.height);
+	DrawCachedTexture(tex, x, y);
 }
 
 void Gl1DrawClxTRN(Point position, ClxSprite clx, const uint8_t *trn)
@@ -580,7 +616,7 @@ void Gl1DrawClxTRN(Point position, ClxSprite clx, const uint8_t *trn)
 	int y = position.y - clx.height() + 1;
 	EnsureFrameBegun();
 	glColor4f(1, 1, 1, 1);
-	DrawTexturedQuad(tex.textureId, x, y, tex.width, tex.height);
+	DrawCachedTexture(tex, x, y);
 }
 
 void Gl1DrawClxBlended(Point position, ClxSprite clx)
@@ -590,7 +626,7 @@ void Gl1DrawClxBlended(Point position, ClxSprite clx)
 	int y = position.y - clx.height() + 1;
 	EnsureFrameBegun();
 	glColor4f(1, 1, 1, 0.5f);
-	DrawTexturedQuad(tex.textureId, x, y, tex.width, tex.height);
+	DrawCachedTexture(tex, x, y);
 	glColor4f(1, 1, 1, 1);
 }
 
@@ -601,7 +637,7 @@ void Gl1DrawClxBlendedTRN(Point position, ClxSprite clx, const uint8_t *trn)
 	int y = position.y - clx.height() + 1;
 	EnsureFrameBegun();
 	glColor4f(1, 1, 1, 0.5f);
-	DrawTexturedQuad(tex.textureId, x, y, tex.width, tex.height);
+	DrawCachedTexture(tex, x, y);
 	glColor4f(1, 1, 1, 1);
 }
 
@@ -612,7 +648,7 @@ void Gl1DrawClxWithLight(Point position, ClxSprite clx, uint8_t lightLevel)
 	int y = position.y - clx.height() + 1;
 	EnsureFrameBegun();
 	SetVertexLighting(lightLevel);
-	DrawTexturedQuad(tex.textureId, x, y, tex.width, tex.height);
+	DrawCachedTexture(tex, x, y);
 	glColor4f(1, 1, 1, 1);
 }
 
@@ -624,7 +660,7 @@ void Gl1DrawClxWithLightBlended(Point position, ClxSprite clx, uint8_t lightLeve
 	EnsureFrameBegun();
 	float brightness = SpriteLightBrightness[std::min<uint8_t>(lightLevel, 15)];
 	glColor4f(brightness, brightness, brightness, 0.5f);
-	DrawTexturedQuad(tex.textureId, x, y, tex.width, tex.height);
+	DrawCachedTexture(tex, x, y);
 	glColor4f(1, 1, 1, 1);
 }
 
@@ -639,17 +675,7 @@ void Gl1DrawTile(Point position, TileType tileType, const uint8_t *src, int_fast
 		// Vertex lighting: texture is unlit, vertex color darkens it.
 		auto &tex = textureCache.GetTileTexture(src, tileType, maskType, height);
 
-		// Derive light level from tbl pointer by comparing against LightTables.
-		uint8_t lightLevel = 0;
-		if (tbl != nullptr) {
-			for (size_t i = 0; i < NumLightingLevels; i++) {
-				if (tbl == LightTables[i].data()) {
-					lightLevel = static_cast<uint8_t>(i);
-					break;
-				}
-			}
-		}
-		float brightness = TileLightBrightness[std::min<uint8_t>(lightLevel, 15)];
+		const float brightness = TileBrightness(tbl);
 		if (maskType == MaskType::Transparent) {
 			glColor4f(brightness, brightness, brightness, 0.5f);
 		} else {
@@ -657,21 +683,19 @@ void Gl1DrawTile(Point position, TileType tileType, const uint8_t *src, int_fast
 		}
 		int x = position.x;
 		int y = position.y - static_cast<int>(tex.height) + 1;
-		DrawTexturedQuad(tex.textureId, x, y, tex.width, tex.height);
+		DrawCachedTexture(tex, x, y);
 		glColor4f(1, 1, 1, 1);
 	} else {
 		// Pixel lighting: light table baked into the texture at upload time.
+		// HD textures are unlit, so they are darkened by the vertex colour instead.
 		auto &tex = textureCache.GetTileTexture(src, tileType, maskType, height, tbl);
 
-		if (maskType == MaskType::Transparent) {
-			glColor4f(1, 1, 1, 0.5f);
-		}
+		const float brightness = tex.hd ? TileBrightness(tbl) : 1.0f;
+		glColor4f(brightness, brightness, brightness, maskType == MaskType::Transparent ? 0.5f : 1.0f);
 		int x = position.x;
 		int y = position.y - static_cast<int>(tex.height) + 1;
-		DrawTexturedQuad(tex.textureId, x, y, tex.width, tex.height);
-		if (maskType == MaskType::Transparent) {
-			glColor4f(1, 1, 1, 1);
-		}
+		DrawCachedTexture(tex, x, y);
+		glColor4f(1, 1, 1, 1);
 	}
 }
 
