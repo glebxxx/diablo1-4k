@@ -34,3 +34,18 @@ Every user-visible change made in this fork is listed below.
   - New key action *Toggle run in dungeons*, bound to **J** by default (rebind it in *Settings → Keyboard*). It shows "Running in dungeons enabled/disabled".
   - Single player only: the option has no effect in multiplayer games (every client simulates every player's walk speed) or while a demo is recorded or played back. Town behaviour, the save format and demo determinism are unchanged. Walking sounds are muted while running, as upstream does in town.
   - Russian strings added to `Translations/ru.po`. Covered by `test/player_test.cpp` (`IsRunningEnabledOnCurrentLevel`).
+- **`0003-ru-po-upstream-pr8678.patch` — Russian translation update and text-fit test.**
+  - `Translations/ru.po` is taken from upstream pull request [#8678](https://github.com/diasurgical/DevilutionX/pull/8678) ("Update Russian translate") by [MaderatorCreator](https://github.com/MaderatorCreator). It translates the 12 strings our sources had without Russian text, among them the store UI options and the version and shareware messages. The Russian strings for *Run in Dungeons* (patch 0002) are kept.
+  - Ten Russian strings were wider than the place they are drawn in: they wrapped, were cut off, or had overlapping letters. They were shortened, with the same meaning (English: old → new):
+    - *Press gamepad buttons to change.*: «Нажмите любую кнопку для изменения.» → «Нажмите кнопки для изменения.»
+    - *Faster*: «Очень быстрая» → «Оч. быстрая»
+    - *Fastest*: «Самая быстрая» → «Быстрейшая»
+    - *Join {:s} Games*: «Присоединиться к {:s} играм» → «Подключиться к {:s}»
+    - *Hardware Cursor Maximum Size*: «Максимальный размер аппаратного курсора» → «Макс. размер аппарат. курсора»
+    - *Full Heal Potion Pickup*: «Подбор Зелий Полного Исцеления» → «Подбор Зелий Полн. Исцеления»
+    - *Full Rejuvenation Potion Pickup*: «Подбор Зелий Полного Омоложения» → «Подбор Зелий Полн. Омоложения»
+    - *Toggle item highlighting*: «Переключить подсветку предметов» → «Подсветка предметов вкл/выкл»
+    - *List with item graphics*: «Список с визуальной демонстрацией предметов» → «Список с изображениями предметов»
+    - *inv* (main panel button): «инвентарь» → «инвент.»
+  - New test `test/ru_text_fit_test.cpp` measures the Russian strings with the engine's own `GetLineWidth()` and the fonts bundled with DevilutionX, so it needs no game data. It reads `test/fixtures/ru_text_fit/constraints.tsv`: 481 places where a string is drawn in a box of known width (main, settings, hero and multiplayer menus, character panel, spellbook, panel buttons, quest log, info box, stash, game menu, stores). Strings drawn with `KerningFitSpacing` must not need a negative letter spacing. Every row is also checked against the English text.
+  - `ru_text_fit_test --report=docs/i18n/ru-text-fit.md` writes [`docs/i18n/ru-text-fit.md`](docs/i18n/ru-text-fit.md). It lists the rows with the least room to spare, and every Russian string that is more than 25 % wider than its English source, with its source locations.
