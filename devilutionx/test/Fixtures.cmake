@@ -93,6 +93,7 @@ set(devilutionx_fixtures
   txtdata/lf.tsv
   txtdata/lf_no_trail.tsv
   txtdata/sample.tsv
+  hd_pack/key_vectors.json
   txtdata/utf8_bom.tsv
 )
 

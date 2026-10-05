@@ -1,0 +1,9 @@
+[
+  {"name": "single opaque pixel, index 0", "width": 1, "height": 1, "pixels": [0], "sha256": "86a2e77f630bfd5d859765889fa297e3893e9fb4dd2011242116fdfc48aabfcd"},
+  {"name": "single transparent pixel", "width": 1, "height": 1, "pixels": [256], "sha256": "4be4656d02d7d66839900d55b06fd34b9b09c3c0c2c39466ff29ebc0bb85b300"},
+  {"name": "2x1 opaque", "width": 2, "height": 1, "pixels": [1, 255], "sha256": "d4cb931f0e28cd89f3648bc51f9f2439afd1dc867f3e2cb3d6d70c7bf6d2e428"},
+  {"name": "1x2 opaque, same bytes as 2x1", "width": 1, "height": 2, "pixels": [1, 255], "sha256": "7e31bd854ae018f2464de3e0affd1117b5d72c66db895bafc709492d0e2bc7a7"},
+  {"name": "3x2 mixed", "width": 3, "height": 2, "pixels": [256, 200, 256, 17, 128, 31], "sha256": "4747c40687be5d62a9a919e72da5c00f1f107544f5008ed9a94cb6560075fae3"},
+  {"name": "4x4 gradient", "width": 4, "height": 4, "pixels": [240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255], "sha256": "db44402b1ef910ba9105bd8bca36ec99c8ea18ca278157d7821a242c0750bf97"},
+  {"name": "8x3 with transparency", "width": 8, "height": 3, "pixels": [256, 31, 62, 256, 124, 155, 256, 217, 7, 38, 256, 100, 131, 256, 193, 224, 14, 256, 76, 107, 256, 169, 200, 256], "sha256": "2ea54edec2a62e4ff1d439751d83c3781ab4d74428056dd8871422d48e0df72e"}
+]

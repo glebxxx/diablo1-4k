@@ -81,6 +81,13 @@ set(benchmarks
   path_benchmark
 )
 
+if(DEVILUTIONX_GL1_RENDERER)
+  list(APPEND tests
+    hd_key_test
+    hd_pack_test
+  )
+endif()
+
 include(test/Fixtures.cmake)
 
 foreach(test_target ${tests} ${standalone_tests} ${benchmarks})
@@ -138,6 +145,10 @@ target_link_dependencies(crawl_test PRIVATE libdevilutionx_crawl)
 target_link_dependencies(crawl_benchmark PRIVATE libdevilutionx_crawl)
 target_link_dependencies(data_file_test PRIVATE libdevilutionx_txtdata app_fatal_for_testing language_for_testing)
 target_link_dependencies(dun_render_benchmark PRIVATE libdevilutionx_so)
+if(DEVILUTIONX_GL1_RENDERER)
+  # The tests encode synthetic WebP images.
+  target_link_libraries(hd_pack_test PRIVATE WebP::webp)
+endif()
 target_link_dependencies(file_util_test PRIVATE libdevilutionx_file_util app_fatal_for_testing)
 target_link_dependencies(format_int_test PRIVATE libdevilutionx_format_int language_for_testing)
 target_link_dependencies(ini_test PRIVATE libdevilutionx_ini app_fatal_for_testing)

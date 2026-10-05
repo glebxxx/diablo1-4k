@@ -731,10 +731,6 @@ target_link_dependencies(libdevilutionx_options PUBLIC
   libdevilutionx_strings
   libdevilutionx_ini
 )
-if(DEVILUTIONX_GL1_RENDERER)
-  target_compile_definitions(libdevilutionx_options PRIVATE DEVILUTIONX_GL1_RENDERER)
-endif()
-
 add_devilutionx_object_library(libdevilutionx_pathfinding
   engine/path.cpp
 )
@@ -1150,6 +1146,26 @@ endif()
 
 if(DEVILUTIONX_GL1_RENDERER)
   find_package(OpenGL REQUIRED)
+
+  # HD texture packs: no OpenGL calls, unit tested on their own.
+  add_devilutionx_object_library(libdevilutionx_gl1_hd
+    engine/render/gl1/gl1_hd_dump.cpp
+    engine/render/gl1/gl1_hd_json.cpp
+    engine/render/gl1/gl1_hd_key.cpp
+    engine/render/gl1/gl1_hd_pack.cpp
+  )
+  target_include_directories(libdevilutionx_gl1_hd PRIVATE ${PROJECT_SOURCE_DIR}/3rdParty/PicoSHA2)
+  target_link_dependencies(libdevilutionx_gl1_hd
+    PUBLIC
+    DevilutionX::SDL
+    libdevilutionx_surface
+    PRIVATE
+    WebP::webp
+    libdevilutionx_file_util
+    libdevilutionx_strings
+    libdevilutionx_surface_to_png
+  )
+
   add_devilutionx_object_library(libdevilutionx_gl1_renderer
     engine/render/gl1/gl1_renderer.cpp
     engine/render/gl1/gl1_texture_cache.cpp
@@ -1160,6 +1176,7 @@ if(DEVILUTIONX_GL1_RENDERER)
     libdevilutionx_surface
     PRIVATE
     tl
+    libdevilutionx_gl1_hd
     libdevilutionx_options
     libdevilutionx_lighting
   )
