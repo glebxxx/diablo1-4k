@@ -6,6 +6,7 @@
 #include <version>
 
 #include "engine/render/light_render.hpp"
+#include "engine/render/ui_layer.hpp"
 #include "utils/attributes.h"
 #include "utils/palette_blending.hpp"
 
@@ -141,6 +142,56 @@ struct BlitBlendedWithMap {
 	DVL_ALWAYS_INLINE DVL_ATTRIBUTE_HOT void operator()(unsigned length, uint8_t color, uint8_t *DVL_RESTRICT dst) const
 	{
 		BlitFillBlended(dst, length, colorMap[color]);
+	}
+};
+
+// Keyed variants of the blended blitters for the UI layer of a layered frame (see `BlendKeyedPixel`).
+
+inline DVL_NO_INLINE DVL_ATTRIBUTE_HOT void BlitFillBlendedKeyed(uint8_t *dst, unsigned length, uint8_t color, const UiKeyedTarget &target)
+{
+	for (unsigned i = 0; i < length; ++i) {
+		BlendKeyedPixel(dst + i, color, target);
+	}
+}
+
+inline DVL_NO_INLINE DVL_ATTRIBUTE_HOT void BlitPixelsBlendedKeyed(uint8_t *DVL_RESTRICT dst, const uint8_t *DVL_RESTRICT src, unsigned length, const UiKeyedTarget &target)
+{
+	for (unsigned i = 0; i < length; ++i) {
+		BlendKeyedPixel(dst + i, src[i], target);
+	}
+}
+
+inline DVL_NO_INLINE DVL_ATTRIBUTE_HOT void BlitPixelsBlendedWithMapKeyed(uint8_t *DVL_RESTRICT dst, const uint8_t *DVL_RESTRICT src, unsigned length, const uint8_t *DVL_RESTRICT colorMap, const UiKeyedTarget &target)
+{
+	for (unsigned i = 0; i < length; ++i) {
+		BlendKeyedPixel(dst + i, colorMap[src[i]], target);
+	}
+}
+
+struct BlitBlendedKeyed {
+	UiKeyedTarget target;
+
+	DVL_ALWAYS_INLINE DVL_ATTRIBUTE_HOT void operator()(unsigned length, uint8_t *DVL_RESTRICT dst, const uint8_t *DVL_RESTRICT src) const
+	{
+		BlitPixelsBlendedKeyed(dst, src, length, target);
+	}
+	DVL_ALWAYS_INLINE DVL_ATTRIBUTE_HOT void operator()(unsigned length, uint8_t color, uint8_t *DVL_RESTRICT dst) const
+	{
+		BlitFillBlendedKeyed(dst, length, color, target);
+	}
+};
+
+struct BlitBlendedWithMapKeyed {
+	const uint8_t *DVL_RESTRICT colorMap;
+	UiKeyedTarget target;
+
+	DVL_ALWAYS_INLINE DVL_ATTRIBUTE_HOT void operator()(unsigned length, uint8_t *DVL_RESTRICT dst, const uint8_t *DVL_RESTRICT src) const
+	{
+		BlitPixelsBlendedWithMapKeyed(dst, src, length, colorMap, target);
+	}
+	DVL_ALWAYS_INLINE DVL_ATTRIBUTE_HOT void operator()(unsigned length, uint8_t color, uint8_t *DVL_RESTRICT dst) const
+	{
+		BlitFillBlendedKeyed(dst, length, colorMap[color], target);
 	}
 };
 

@@ -38,6 +38,8 @@ set(tests
   tile_properties_test
   timedemo_test
   townerdat_test
+  ui_layer_test
+  layered_compose_test
   world_view_test
   writehero_test
   vendor_test

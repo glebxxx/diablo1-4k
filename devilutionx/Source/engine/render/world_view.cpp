@@ -8,19 +8,17 @@
 #include "control/control.hpp"
 #include "engine/backbuffer_state.hpp"
 #include "engine/demomode.h"
+#include "engine/layered_present.hpp"
 #include "engine/render/scrollrt.h"
 #include "headless_mode.hpp"
 #include "options.h"
 #include "utils/display.h"
 #include "utils/ui_fwd.h"
 
-// The layered renderer needs SDL2 >= 2.0.12 (`SDL_RenderCopyF`, `SDL_SetTextureScaleMode`).
-// SDL1 and SDL3 builds keep the upstream renderer.
+// The world zoom options exist in SDL2 builds only. The layered renderer itself also needs
+// SDL2 >= 2.0.12 (`DVL_LAYERED_RENDERER`, see ui_layer.hpp). SDL1 and SDL3 builds keep the upstream renderer.
 #if !defined(USE_SDL1) && !defined(USE_SDL3)
 #define DVL_WORLD_ZOOM_OPTIONS
-#if SDL_VERSION_ATLEAST(2, 0, 12)
-#define DVL_LAYERED_RENDERER
-#endif
 #endif
 
 namespace devilution {
@@ -288,6 +286,7 @@ bool RecalcWorldView()
 	const bool changed = view.layered != CurrentView.layered || (view.layered && view != CurrentView);
 	CurrentView = view;
 	LayeredActive = view.layered;
+	UpdateLayeredBuffers();
 	return changed;
 }
 

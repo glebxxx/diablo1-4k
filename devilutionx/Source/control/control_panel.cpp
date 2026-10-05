@@ -8,6 +8,7 @@
 #include "controls/modifier_hints.h"
 #include "diablo_msg.hpp"
 #include "engine/backbuffer_state.hpp"
+#include "engine/layered_present.hpp"
 #include "engine/load_cel.hpp"
 #include "engine/render/clx_render.hpp"
 #include "engine/trn.hpp"
@@ -773,6 +774,15 @@ void DrawDurIcon(const Surface &out)
 
 void RedBack(const Surface &out)
 {
+	if (IsKeyedUiLayer(out)) {
+		// Layered frame: tint the whole world and the UI drawn so far.
+		const bool hell = leveltype == DTYPE_HELL;
+		const uint8_t *trn = GetPauseTRN();
+		ApplyTrnToSurface(WorldBuffer(), trn, hell);
+		ApplyTrnToKeyedUiLayer(out, trn, hell);
+		return;
+	}
+
 	uint8_t *dst = out.begin();
 	uint8_t *tbl = GetPauseTRN();
 	for (int h = gnViewportHeight; h != 0; h--, dst += out.pitch() - gnScreenWidth) {
