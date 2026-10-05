@@ -797,7 +797,9 @@ Point WorldPointToTile(Point worldPosition, bool &flipflag)
 	CalcFirstTilePosition(firstTile, offset);
 
 	// Cells of TILE_WIDTH x TILE_HEIGHT pixels, laid out so that the diamond of firstTile is centred on the
-	// middle of the left edge of cell (0, 0), as ShiftToDiamondGridAlignment() expects
+	// middle of the left edge of cell (0, 0), as ShiftToDiamondGridAlignment() expects.
+	// The formula in issue #4 (section 3.4) has no - TILE_WIDTH / 2. It is added on purpose: without it a diamond's
+	// centre falls on the crossing of the cell diagonals, and the tile centres would pick a neighbouring tile.
 	Point screenPosition { worldPosition.x - offset.deltaX - TILE_WIDTH / 2, worldPosition.y - offset.deltaY + TILE_HEIGHT - 1 };
 
 	const Player &myPlayer = *MyPlayer;

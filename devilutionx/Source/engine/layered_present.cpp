@@ -101,6 +101,11 @@ void FreeLayeredBuffers()
 	SetUiLayerTarget(nullptr, nullptr);
 	WorldSurface = nullptr;
 	UiHalfPlane = {};
+	// Not layered any more (unlike `EndLayeredMode()` alone, e.g. for a movie, which keeps the textures for reuse).
+	WorldTexture = nullptr;
+	WorldTextureSize = {};
+	UiTexture = nullptr;
+	UiTextureSize = {};
 }
 
 bool LayeredBuffersMatch(const WorldView &view)
@@ -351,6 +356,11 @@ void UpdateLayeredBuffers()
 	if (UiHalfPlane.size() != halfPlaneSize)
 		UiHalfPlane.assign(halfPlaneSize, 0);
 	SetUiLayerTarget(PalSurface->pixels, UiHalfPlane.data());
+}
+
+bool LayeredTexturesAllocated()
+{
+	return WorldTexture != nullptr || UiTexture != nullptr;
 }
 
 void FreeLayeredResources()

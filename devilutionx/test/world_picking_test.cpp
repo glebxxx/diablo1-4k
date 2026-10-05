@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <random>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -218,7 +219,9 @@ TEST_F(WorldPickingTest, TileCentresMapToTheirTile)
 				// The world surface is covered by about W.w * W.h / (32 * 32) diamonds
 				ASSERT_GE(static_cast<int>(tiles.size()), view.size.width * view.size.height / (TILE_WIDTH * TILE_HEIGHT / 2) * 9 / 10);
 				int failures = 0;
+				int visibleFailures = 0;
 				for (const Point tile : tiles) {
+					// The centre of the diamond WorldPointToTile() inverts (shifted by the walking prediction)
 					const Point centre = GetScreenPosition(tile) + DiamondCentre + prediction;
 					bool flipflag = false;
 					if (WorldPointToTile(centre, flipflag) != tile)
@@ -226,8 +229,16 @@ TEST_F(WorldPickingTest, TileCentresMapToTheirTile)
 					// The other centre pixel
 					if (WorldPointToTile(centre + Displacement { 0, 1 }, flipflag) != tile)
 						failures++;
+
+					// The visible centre C(t) of the tile, also while walking
+					const Point visibleCentre = GetScreenPosition(tile) + DiamondCentre;
+					if (WorldPointToTile(visibleCentre, flipflag) != tile)
+						visibleFailures++;
+					if (WorldPointToTile(visibleCentre + Displacement { 0, 1 }, flipflag) != tile)
+						visibleFailures++;
 				}
 				EXPECT_EQ(failures, 0);
+				EXPECT_EQ(visibleFailures, 0);
 			}
 		}
 	}
@@ -251,6 +262,8 @@ TEST_F(WorldPickingTest, RandomPixelsLieInTheReturnedDiamond)
 				const Point pixel { randomX(rng), randomY(rng) };
 				bool flipflag = false;
 				const Point tile = WorldPointToTile(pixel, flipflag);
+				// While walking, the picked diamonds are shifted by the walking prediction, so the oracle is too. (The
+				// M1-T2 text of issue #4 checks the unshifted diamond, which fails for many pixels while walking.)
 				// Edge pixels may go to either neighbour: allow 1/16 for the integer diagonals of the cell split
 				const double distance = DiamondDistance(tile, pixel - prediction);
 				worst = std::max(worst, distance);
@@ -292,25 +305,38 @@ TEST_F(WorldPickingTest, PickingThroughTheUi)
 				SCOPED_TRACE(testing::Message() << "ws=" << ws << " U=" << uiCase.ui.width << "x" << uiCase.ui.height
 				                                << " integer=" << uiCase.integerScale << " " << Describe(pose));
 				const Displacement prediction = Prediction();
-				int total = 0;
-				int exact = 0;
-				int notNeighbour = 0;
-				for (const Point tile : VisibleTiles(view)) {
-					const Point uiPoint = WorldToUi(view, GetScreenPosition(tile) + DiamondCentre + prediction);
+				struct PickCounts {
+					int total = 0;
+					int exact = 0;
+					int notNeighbour = 0;
+				};
+				const auto pickThroughUi = [&view](Point tile, Point worldPoint, PickCounts &counts) {
+					const Point uiPoint = WorldToUi(view, worldPoint);
 					if (!Contains(view.uiSize, uiPoint))
-						continue;
+						return;
 					bool flipflag = false;
 					const Point picked = WorldPointToTile(UiToWorld(view, uiPoint), flipflag);
-					total++;
+					counts.total++;
 					if (picked == tile)
-						exact++;
+						counts.exact++;
 					else if (!IsNeighbour(picked, tile))
-						notNeighbour++;
+						counts.notNeighbour++;
+				};
+				PickCounts inverse;
+				PickCounts visible;
+				for (const Point tile : VisibleTiles(view)) {
+					// The centre of the diamond WorldPointToTile() inverts (shifted by the walking prediction)
+					pickThroughUi(tile, GetScreenPosition(tile) + DiamondCentre + prediction, inverse);
+					// The visible centre C(t) of the tile, also while walking
+					pickThroughUi(tile, GetScreenPosition(tile) + DiamondCentre, visible);
 				}
-				ASSERT_GT(total, 0);
-				EXPECT_EQ(notNeighbour, 0);
-				if (ws >= 3) {
-					EXPECT_GE(exact * 100, total * 99) << exact << " of " << total;
+				for (const auto &[name, counts] : { std::pair { "inverse", inverse }, std::pair { "visible", visible } }) {
+					SCOPED_TRACE(name);
+					ASSERT_GT(counts.total, 0);
+					EXPECT_EQ(counts.notNeighbour, 0);
+					if (ws >= 3) {
+						EXPECT_GE(counts.exact * 100, counts.total * 99) << counts.exact << " of " << counts.total;
+					}
 				}
 			}
 		}
@@ -340,7 +366,7 @@ TEST_F(WorldPickingTest, HeroStaysAnchoredAboveThePanel)
 			EXPECT_LE(std::abs(heroY - (uiAnchor.y + 0.5)), tolerance);
 
 			// M1-T2: the diamond centre pixel C = S + (32, -16) is within 1 UI pixel of the anchor whenever a world pixel is
-			// not bigger than a UI pixel
+			// not bigger than a UI pixel. With bigger world pixels the 1 UI pixel of issue #4 cannot hold.
 			const Point heroCentreUi = WorldToUi(view, heroBottomLeft + DiamondCentre);
 			if (worldPixelInUi <= 1) {
 				EXPECT_LE(std::abs(heroCentreUi.x - uiAnchor.x), 1);

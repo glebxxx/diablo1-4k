@@ -59,6 +59,9 @@ std::optional<WorldView> ComputeLayeredView()
 {
 #ifdef DVL_LAYERED_RENDERER
 	const GraphicsOptions &graphics = GetOptions().Graphics;
+	// Demos record the screen size and mouse positions of the single-layer renderer. The option itself is left
+	// alone (not forced off by demo::OverrideOptions()): a forced value could be written back to diablo.ini once
+	// the viewer takes over a demo with Escape and the options are saved.
 	if (!*graphics.independentZoom || !*graphics.upscale || renderer == nullptr || HeadlessMode
 	    || demo::IsRunning() || demo::IsRecording()) {
 		return std::nullopt;

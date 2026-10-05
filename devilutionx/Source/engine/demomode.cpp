@@ -636,10 +636,6 @@ void OverrideOptions()
 #if SDL_VERSION_ATLEAST(2, 0, 0)
 	GetOptions().Graphics.hardwareCursor.SetValue(false);
 #endif
-#if !defined(USE_SDL1) && !defined(USE_SDL3)
-	// Demos record the screen size and mouse positions of the single-layer renderer.
-	GetOptions().Graphics.independentZoom.SetValue(false);
-#endif
 	if (Timedemo) {
 		GetOptions().Graphics.frameRateControl.SetValue(FrameRateControl::None);
 	}

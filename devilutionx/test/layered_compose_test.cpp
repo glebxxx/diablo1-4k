@@ -21,6 +21,7 @@
 #include "engine/render/world_view.hpp"
 #include "engine/size.hpp"
 #include "engine/surface.hpp"
+#include "utils/display.h"
 #include "utils/palette_blending.hpp"
 #include "utils/sdl_wrap.h"
 #include "utils/ui_fwd.h"
@@ -334,6 +335,53 @@ TEST(LayeredComposeTest, BeginLayeredFrameEndsTheModeWhenNoLongerLayered)
 	BeginLayeredFrame();
 	EXPECT_TRUE(PresentLayered());
 	EXPECT_EQ(*GlobalBackBuffer().at(10, 10), UiKeyTransparent);
+}
+
+/** @brief A software renderer drawing into a surface, in place of the window's renderer. */
+class SoftwareRendererScope {
+public:
+	explicit SoftwareRendererScope(Size output)
+	    : output_(SDLWrap::CreateRGBSurfaceWithFormat(0, output.width, output.height, 32, SDL_PIXELFORMAT_ARGB8888))
+	    , savedRenderer_(renderer)
+	{
+		renderer = SDL_CreateSoftwareRenderer(output_.get());
+	}
+
+	~SoftwareRendererScope()
+	{
+		// The layered textures belong to the renderer.
+		FreeLayeredResources();
+		if (renderer != nullptr)
+			SDL_DestroyRenderer(renderer);
+		renderer = savedRenderer_;
+	}
+
+	SoftwareRendererScope(const SoftwareRendererScope &) = delete;
+	SoftwareRendererScope &operator=(const SoftwareRendererScope &) = delete;
+
+private:
+	SDLSurfaceUniquePtr output_;
+	SDL_Renderer *savedRenderer_;
+};
+
+TEST(LayeredComposeTest, TexturesAreFreedWhenNoLongerLayered)
+{
+	const LayeredFrameSetup setup({ 1920, 1080 }, { 960, 540 }, 2);
+	ASSERT_TRUE(PresentLayered());
+	const SoftwareRendererScope softwareRenderer({ 1920, 1080 });
+	ASSERT_NE(renderer, nullptr) << SDL_GetError();
+
+	EXPECT_TRUE(LayeredPresent());
+	EXPECT_TRUE(LayeredTexturesAllocated());
+
+	// Leaving only the present mode (menus, movies, progress screens) keeps the textures for the next layered frame.
+	EndLayeredMode();
+	EXPECT_TRUE(LayeredTexturesAllocated());
+
+	// No longer layered (e.g. Independent Zoom or Upscale turned off): the textures are released.
+	SetWorldViewForTesting(ComputeLegacyWorldView(setup.View().uiSize, MainPanelHeight));
+	UpdateLayeredBuffers();
+	EXPECT_FALSE(LayeredTexturesAllocated());
 }
 
 TEST(LayeredComposeTest, NotLayeredWithoutAFrame)

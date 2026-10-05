@@ -98,8 +98,15 @@ void EndLayeredMode();
 /** @brief Rebuilds the key remap table from `logical_palette`. Call after the blending table changes. */
 void RebuildUiKeyRemap();
 
-/** @brief (Re)allocates or frees the world surface and the half plane for the current view. Called by `RecalcWorldView()`. */
+/**
+ * @brief (Re)allocates the world surface and the half plane for the current view. Called by `RecalcWorldView()`.
+ *
+ * When the layered renderer is not active, frees them together with the textures.
+ */
 void UpdateLayeredBuffers();
+
+/** @brief Whether the textures of the layered present are allocated. */
+bool LayeredTexturesAllocated();
 
 /** @brief Frees everything owned by the layered renderer. Must run before the renderer is destroyed. */
 void FreeLayeredResources();

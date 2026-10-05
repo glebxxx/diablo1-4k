@@ -240,7 +240,9 @@ TEST(WorldViewTest, ConversionsFollowOutputPixels)
 TEST(WorldViewTest, RoundTrips)
 {
 	// Note: the bounds are ceil(s_u / ws) for world -> UI -> world (a UI pixel spans s_u / ws world pixels)
-	// and ceil(ws / s_u) for UI -> world -> UI (a world pixel spans ws / s_u UI pixels).
+	// and ceil(ws / s_u) for UI -> world -> UI (a world pixel spans ws / s_u UI pixels). The M1-T1 text of
+	// issue #4 has the two bounds swapped, which does not hold (e.g. a UI error of 6 for U=3840x2160 with
+	// integer scaling at ws=12 on 5K).
 	std::mt19937 rng(20261002);
 	for (const Size o : Outputs) {
 		for (const Size u : UiSizes) {
@@ -396,13 +398,14 @@ TEST(WorldViewTest, Options)
 	graphics.worldZoom.SetValue(0);
 }
 
-TEST(WorldViewTest, DemoOverridesIndependentZoom)
+TEST(WorldViewTest, DemoLeavesIndependentZoomAlone)
 {
+	// Demos are kept on the single-layer renderer by the demo::IsRunning() / IsRecording() check of the view.
+	// Forcing the option off would get it saved to diablo.ini once the viewer takes over a demo with Escape.
 	GetOptions().Graphics.independentZoom.SetValue(true);
 	demo::OverrideOptions();
-	EXPECT_FALSE(*GetOptions().Graphics.independentZoom);
+	EXPECT_TRUE(*GetOptions().Graphics.independentZoom);
 	EXPECT_FALSE(IsLayeredActive());
-	GetOptions().Graphics.independentZoom.SetValue(true);
 }
 #endif
 

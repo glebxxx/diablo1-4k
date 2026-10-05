@@ -160,7 +160,7 @@ index 042b0c9..22c2159 100644
  			CalcViewportGeometry();
  #endif
 diff --git a/Source/cursor.cpp b/Source/cursor.cpp
-index 4e78d28..1f2f8cb 100644
+index 4e78d28..4887ee5 100644
 --- a/Source/cursor.cpp
 +++ b/Source/cursor.cpp
 @@ -29,6 +29,7 @@
@@ -238,7 +238,7 @@ index 4e78d28..1f2f8cb 100644
  	}
  }
  
-@@ -777,6 +789,31 @@ void ShiftToDiamondGridAlignment(Point screenPosition, Point &tile, bool &flipfl
+@@ -777,6 +789,33 @@ void ShiftToDiamondGridAlignment(Point screenPosition, Point &tile, bool &flipfl
  	flipflag = (flipy && flipx) || ((flipy || flipx) && px < TILE_WIDTH / 2);
  }
  
@@ -250,7 +250,9 @@ index 4e78d28..1f2f8cb 100644
 +	CalcFirstTilePosition(firstTile, offset);
 +
 +	// Cells of TILE_WIDTH x TILE_HEIGHT pixels, laid out so that the diamond of firstTile is centred on the
-+	// middle of the left edge of cell (0, 0), as ShiftToDiamondGridAlignment() expects
++	// middle of the left edge of cell (0, 0), as ShiftToDiamondGridAlignment() expects.
++	// The formula in issue #4 (section 3.4) has no - TILE_WIDTH / 2. It is added on purpose: without it a diamond's
++	// centre falls on the crossing of the cell diagonals, and the tile centres would pick a neighbouring tile.
 +	Point screenPosition { worldPosition.x - offset.deltaX - TILE_WIDTH / 2, worldPosition.y - offset.deltaY + TILE_HEIGHT - 1 };
 +
 +	const Player &myPlayer = *MyPlayer;
@@ -270,7 +272,7 @@ index 4e78d28..1f2f8cb 100644
  /**
   * @brief While holding the button down we should retain target (but potentially lose it if it dies, goes out of view, etc)
   */
-@@ -907,18 +944,25 @@ void CheckCursMove()
+@@ -907,18 +946,25 @@ void CheckCursMove()
  	Point screenPosition = MousePosition;
  	const Rectangle &mainPanel = GetMainPanel();
  
@@ -451,21 +453,6 @@ index 9a5c7f4..aafe5ee 100644
  		    GetOptions().Graphics.zoom.SetValue(!*GetOptions().Graphics.zoom);
  		    CalcViewportGeometry();
  	    },
-diff --git a/Source/engine/demomode.cpp b/Source/engine/demomode.cpp
-index 0043f27..38e1114 100644
---- a/Source/engine/demomode.cpp
-+++ b/Source/engine/demomode.cpp
-@@ -635,6 +635,10 @@ void OverrideOptions()
- #endif
- #if SDL_VERSION_ATLEAST(2, 0, 0)
- 	GetOptions().Graphics.hardwareCursor.SetValue(false);
-+#endif
-+#if !defined(USE_SDL1) && !defined(USE_SDL3)
-+	// Demos record the screen size and mouse positions of the single-layer renderer.
-+	GetOptions().Graphics.independentZoom.SetValue(false);
- #endif
- 	if (Timedemo) {
- 		GetOptions().Graphics.frameRateControl.SetValue(FrameRateControl::None);
 diff --git a/Source/engine/dx.cpp b/Source/engine/dx.cpp
 index 54b2d00..8daf3d0 100644
 --- a/Source/engine/dx.cpp
@@ -526,10 +513,10 @@ index 54b2d00..8daf3d0 100644
  		if (ControlMode == ControlTypes::VirtualGamepad) {
 diff --git a/Source/engine/layered_present.cpp b/Source/engine/layered_present.cpp
 new file mode 100644
-index 0000000..724d29e
+index 0000000..e3135b2
 --- /dev/null
 +++ b/Source/engine/layered_present.cpp
-@@ -0,0 +1,496 @@
+@@ -0,0 +1,506 @@
 +/**
 + * @file layered_present.cpp
 + *
@@ -633,6 +620,11 @@ index 0000000..724d29e
 +	SetUiLayerTarget(nullptr, nullptr);
 +	WorldSurface = nullptr;
 +	UiHalfPlane = {};
++	// Not layered any more (unlike `EndLayeredMode()` alone, e.g. for a movie, which keeps the textures for reuse).
++	WorldTexture = nullptr;
++	WorldTextureSize = {};
++	UiTexture = nullptr;
++	UiTextureSize = {};
 +}
 +
 +bool LayeredBuffersMatch(const WorldView &view)
@@ -885,6 +877,11 @@ index 0000000..724d29e
 +	SetUiLayerTarget(PalSurface->pixels, UiHalfPlane.data());
 +}
 +
++bool LayeredTexturesAllocated()
++{
++	return WorldTexture != nullptr || UiTexture != nullptr;
++}
++
 +void FreeLayeredResources()
 +{
 +	SetPresentLayered(false);
@@ -1028,10 +1025,10 @@ index 0000000..724d29e
 +} // namespace devilution
 diff --git a/Source/engine/layered_present.hpp b/Source/engine/layered_present.hpp
 new file mode 100644
-index 0000000..ec81eca
+index 0000000..84814bd
 --- /dev/null
 +++ b/Source/engine/layered_present.hpp
-@@ -0,0 +1,152 @@
+@@ -0,0 +1,159 @@
 +/**
 + * @file layered_present.hpp
 + *
@@ -1132,8 +1129,15 @@ index 0000000..ec81eca
 +/** @brief Rebuilds the key remap table from `logical_palette`. Call after the blending table changes. */
 +void RebuildUiKeyRemap();
 +
-+/** @brief (Re)allocates or frees the world surface and the half plane for the current view. Called by `RecalcWorldView()`. */
++/**
++ * @brief (Re)allocates the world surface and the half plane for the current view. Called by `RecalcWorldView()`.
++ *
++ * When the layered renderer is not active, frees them together with the textures.
++ */
 +void UpdateLayeredBuffers();
++
++/** @brief Whether the textures of the layered present are allocated. */
++bool LayeredTexturesAllocated();
 +
 +/** @brief Frees everything owned by the layered renderer. Must run before the renderer is destroyed. */
 +void FreeLayeredResources();
@@ -2017,10 +2021,10 @@ index 0000000..a04a2e9
 +} // namespace devilution
 diff --git a/Source/engine/render/world_view.cpp b/Source/engine/render/world_view.cpp
 new file mode 100644
-index 0000000..b1fd1df
+index 0000000..f5a3c10
 --- /dev/null
 +++ b/Source/engine/render/world_view.cpp
-@@ -0,0 +1,365 @@
+@@ -0,0 +1,368 @@
 +#include "engine/render/world_view.hpp"
 +
 +#include <algorithm>
@@ -2082,6 +2086,9 @@ index 0000000..b1fd1df
 +{
 +#ifdef DVL_LAYERED_RENDERER
 +	const GraphicsOptions &graphics = GetOptions().Graphics;
++	// Demos record the screen size and mouse positions of the single-layer renderer. The option itself is left
++	// alone (not forced off by demo::OverrideOptions()): a forced value could be written back to diablo.ini once
++	// the viewer takes over a demo with Escape and the options are saved.
 +	if (!*graphics.independentZoom || !*graphics.upscale || renderer == nullptr || HeadlessMode
 +	    || demo::IsRunning() || demo::IsRecording()) {
 +		return std::nullopt;
@@ -2831,10 +2838,10 @@ index fbe3af6..d73f591 100644
  msgstr "Попиксельное освещение"
 diff --git a/test/layered_compose_test.cpp b/test/layered_compose_test.cpp
 new file mode 100644
-index 0000000..94548f5
+index 0000000..2729bae
 --- /dev/null
 +++ b/test/layered_compose_test.cpp
-@@ -0,0 +1,353 @@
+@@ -0,0 +1,401 @@
 +/**
 + * Acceptance test M1-T4 (issue #4): the composite of the layered renderer matches the upstream
 + * single-surface result.
@@ -2858,6 +2865,7 @@ index 0000000..94548f5
 +#include "engine/render/world_view.hpp"
 +#include "engine/size.hpp"
 +#include "engine/surface.hpp"
++#include "utils/display.h"
 +#include "utils/palette_blending.hpp"
 +#include "utils/sdl_wrap.h"
 +#include "utils/ui_fwd.h"
@@ -3171,6 +3179,53 @@ index 0000000..94548f5
 +	BeginLayeredFrame();
 +	EXPECT_TRUE(PresentLayered());
 +	EXPECT_EQ(*GlobalBackBuffer().at(10, 10), UiKeyTransparent);
++}
++
++/** @brief A software renderer drawing into a surface, in place of the window's renderer. */
++class SoftwareRendererScope {
++public:
++	explicit SoftwareRendererScope(Size output)
++	    : output_(SDLWrap::CreateRGBSurfaceWithFormat(0, output.width, output.height, 32, SDL_PIXELFORMAT_ARGB8888))
++	    , savedRenderer_(renderer)
++	{
++		renderer = SDL_CreateSoftwareRenderer(output_.get());
++	}
++
++	~SoftwareRendererScope()
++	{
++		// The layered textures belong to the renderer.
++		FreeLayeredResources();
++		if (renderer != nullptr)
++			SDL_DestroyRenderer(renderer);
++		renderer = savedRenderer_;
++	}
++
++	SoftwareRendererScope(const SoftwareRendererScope &) = delete;
++	SoftwareRendererScope &operator=(const SoftwareRendererScope &) = delete;
++
++private:
++	SDLSurfaceUniquePtr output_;
++	SDL_Renderer *savedRenderer_;
++};
++
++TEST(LayeredComposeTest, TexturesAreFreedWhenNoLongerLayered)
++{
++	const LayeredFrameSetup setup({ 1920, 1080 }, { 960, 540 }, 2);
++	ASSERT_TRUE(PresentLayered());
++	const SoftwareRendererScope softwareRenderer({ 1920, 1080 });
++	ASSERT_NE(renderer, nullptr) << SDL_GetError();
++
++	EXPECT_TRUE(LayeredPresent());
++	EXPECT_TRUE(LayeredTexturesAllocated());
++
++	// Leaving only the present mode (menus, movies, progress screens) keeps the textures for the next layered frame.
++	EndLayeredMode();
++	EXPECT_TRUE(LayeredTexturesAllocated());
++
++	// No longer layered (e.g. Independent Zoom or Upscale turned off): the textures are released.
++	SetWorldViewForTesting(ComputeLegacyWorldView(setup.View().uiSize, MainPanelHeight));
++	UpdateLayeredBuffers();
++	EXPECT_FALSE(LayeredTexturesAllocated());
 +}
 +
 +TEST(LayeredComposeTest, NotLayeredWithoutAFrame)
@@ -3643,10 +3698,10 @@ index 0000000..b32c07c
 +} // namespace devilution
 diff --git a/test/world_picking_test.cpp b/test/world_picking_test.cpp
 new file mode 100644
-index 0000000..2582eee
+index 0000000..4d2106a
 --- /dev/null
 +++ b/test/world_picking_test.cpp
-@@ -0,0 +1,531 @@
+@@ -0,0 +1,557 @@
 +/**
 + * @file world_picking_test.cpp
 + *
@@ -3659,6 +3714,7 @@ index 0000000..2582eee
 +#include <cstdlib>
 +#include <random>
 +#include <string>
++#include <utility>
 +#include <vector>
 +
 +#include <gtest/gtest.h>
@@ -3867,7 +3923,9 @@ index 0000000..2582eee
 +				// The world surface is covered by about W.w * W.h / (32 * 32) diamonds
 +				ASSERT_GE(static_cast<int>(tiles.size()), view.size.width * view.size.height / (TILE_WIDTH * TILE_HEIGHT / 2) * 9 / 10);
 +				int failures = 0;
++				int visibleFailures = 0;
 +				for (const Point tile : tiles) {
++					// The centre of the diamond WorldPointToTile() inverts (shifted by the walking prediction)
 +					const Point centre = GetScreenPosition(tile) + DiamondCentre + prediction;
 +					bool flipflag = false;
 +					if (WorldPointToTile(centre, flipflag) != tile)
@@ -3875,8 +3933,16 @@ index 0000000..2582eee
 +					// The other centre pixel
 +					if (WorldPointToTile(centre + Displacement { 0, 1 }, flipflag) != tile)
 +						failures++;
++
++					// The visible centre C(t) of the tile, also while walking
++					const Point visibleCentre = GetScreenPosition(tile) + DiamondCentre;
++					if (WorldPointToTile(visibleCentre, flipflag) != tile)
++						visibleFailures++;
++					if (WorldPointToTile(visibleCentre + Displacement { 0, 1 }, flipflag) != tile)
++						visibleFailures++;
 +				}
 +				EXPECT_EQ(failures, 0);
++				EXPECT_EQ(visibleFailures, 0);
 +			}
 +		}
 +	}
@@ -3900,6 +3966,8 @@ index 0000000..2582eee
 +				const Point pixel { randomX(rng), randomY(rng) };
 +				bool flipflag = false;
 +				const Point tile = WorldPointToTile(pixel, flipflag);
++				// While walking, the picked diamonds are shifted by the walking prediction, so the oracle is too. (The
++				// M1-T2 text of issue #4 checks the unshifted diamond, which fails for many pixels while walking.)
 +				// Edge pixels may go to either neighbour: allow 1/16 for the integer diagonals of the cell split
 +				const double distance = DiamondDistance(tile, pixel - prediction);
 +				worst = std::max(worst, distance);
@@ -3941,25 +4009,38 @@ index 0000000..2582eee
 +				SCOPED_TRACE(testing::Message() << "ws=" << ws << " U=" << uiCase.ui.width << "x" << uiCase.ui.height
 +				                                << " integer=" << uiCase.integerScale << " " << Describe(pose));
 +				const Displacement prediction = Prediction();
-+				int total = 0;
-+				int exact = 0;
-+				int notNeighbour = 0;
-+				for (const Point tile : VisibleTiles(view)) {
-+					const Point uiPoint = WorldToUi(view, GetScreenPosition(tile) + DiamondCentre + prediction);
++				struct PickCounts {
++					int total = 0;
++					int exact = 0;
++					int notNeighbour = 0;
++				};
++				const auto pickThroughUi = [&view](Point tile, Point worldPoint, PickCounts &counts) {
++					const Point uiPoint = WorldToUi(view, worldPoint);
 +					if (!Contains(view.uiSize, uiPoint))
-+						continue;
++						return;
 +					bool flipflag = false;
 +					const Point picked = WorldPointToTile(UiToWorld(view, uiPoint), flipflag);
-+					total++;
++					counts.total++;
 +					if (picked == tile)
-+						exact++;
++						counts.exact++;
 +					else if (!IsNeighbour(picked, tile))
-+						notNeighbour++;
++						counts.notNeighbour++;
++				};
++				PickCounts inverse;
++				PickCounts visible;
++				for (const Point tile : VisibleTiles(view)) {
++					// The centre of the diamond WorldPointToTile() inverts (shifted by the walking prediction)
++					pickThroughUi(tile, GetScreenPosition(tile) + DiamondCentre + prediction, inverse);
++					// The visible centre C(t) of the tile, also while walking
++					pickThroughUi(tile, GetScreenPosition(tile) + DiamondCentre, visible);
 +				}
-+				ASSERT_GT(total, 0);
-+				EXPECT_EQ(notNeighbour, 0);
-+				if (ws >= 3) {
-+					EXPECT_GE(exact * 100, total * 99) << exact << " of " << total;
++				for (const auto &[name, counts] : { std::pair { "inverse", inverse }, std::pair { "visible", visible } }) {
++					SCOPED_TRACE(name);
++					ASSERT_GT(counts.total, 0);
++					EXPECT_EQ(counts.notNeighbour, 0);
++					if (ws >= 3) {
++						EXPECT_GE(counts.exact * 100, counts.total * 99) << counts.exact << " of " << counts.total;
++					}
 +				}
 +			}
 +		}
@@ -3989,7 +4070,7 @@ index 0000000..2582eee
 +			EXPECT_LE(std::abs(heroY - (uiAnchor.y + 0.5)), tolerance);
 +
 +			// M1-T2: the diamond centre pixel C = S + (32, -16) is within 1 UI pixel of the anchor whenever a world pixel is
-+			// not bigger than a UI pixel
++			// not bigger than a UI pixel. With bigger world pixels the 1 UI pixel of issue #4 cannot hold.
 +			const Point heroCentreUi = WorldToUi(view, heroBottomLeft + DiamondCentre);
 +			if (worldPixelInUi <= 1) {
 +				EXPECT_LE(std::abs(heroCentreUi.x - uiAnchor.x), 1);
@@ -4180,10 +4261,10 @@ index 0000000..2582eee
 +} // namespace devilution
 diff --git a/test/world_view_test.cpp b/test/world_view_test.cpp
 new file mode 100644
-index 0000000..a151c5d
+index 0000000..00c4ffe
 --- /dev/null
 +++ b/test/world_view_test.cpp
-@@ -0,0 +1,410 @@
+@@ -0,0 +1,413 @@
 +#include <algorithm>
 +#include <cmath>
 +#include <cstdlib>
@@ -4426,7 +4507,9 @@ index 0000000..a151c5d
 +TEST(WorldViewTest, RoundTrips)
 +{
 +	// Note: the bounds are ceil(s_u / ws) for world -> UI -> world (a UI pixel spans s_u / ws world pixels)
-+	// and ceil(ws / s_u) for UI -> world -> UI (a world pixel spans ws / s_u UI pixels).
++	// and ceil(ws / s_u) for UI -> world -> UI (a world pixel spans ws / s_u UI pixels). The M1-T1 text of
++	// issue #4 has the two bounds swapped, which does not hold (e.g. a UI error of 6 for U=3840x2160 with
++	// integer scaling at ws=12 on 5K).
 +	std::mt19937 rng(20261002);
 +	for (const Size o : Outputs) {
 +		for (const Size u : UiSizes) {
@@ -4582,13 +4665,14 @@ index 0000000..a151c5d
 +	graphics.worldZoom.SetValue(0);
 +}
 +
-+TEST(WorldViewTest, DemoOverridesIndependentZoom)
++TEST(WorldViewTest, DemoLeavesIndependentZoomAlone)
 +{
++	// Demos are kept on the single-layer renderer by the demo::IsRunning() / IsRecording() check of the view.
++	// Forcing the option off would get it saved to diablo.ini once the viewer takes over a demo with Escape.
 +	GetOptions().Graphics.independentZoom.SetValue(true);
 +	demo::OverrideOptions();
-+	EXPECT_FALSE(*GetOptions().Graphics.independentZoom);
++	EXPECT_TRUE(*GetOptions().Graphics.independentZoom);
 +	EXPECT_FALSE(IsLayeredActive());
-+	GetOptions().Graphics.independentZoom.SetValue(true);
 +}
 +#endif
 +

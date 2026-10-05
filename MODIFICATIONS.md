@@ -47,7 +47,7 @@ Every user-visible change made in this fork is listed below.
     - **Ctrl + mouse wheel** and **Cmd + mouse wheel** do the same (macOS may reserve Ctrl + wheel for its own screen zoom). One trackpad or Magic Mouse swipe steps once instead of running through all levels.
     - The *Zoom* key action (**Z** by default) and the gamepad *Zoom* action toggle between the current level and about twice it. The old *Zoom* option is not used in layered mode.
   - Mouse picking is the exact inverse of the world drawing, so clicks hit the tile, monster, item or door under the cursor at every level. Item labels and floating damage numbers stay on their objects.
-  - Active only on SDL2 builds with *Upscale* on. Never active in headless mode or while a demo is recorded or played back: demos force *Independent Zoom* off. SDL1 and SDL3 builds and `Upscale=0` keep upstream behaviour. The save format, multiplayer messages and demo determinism are unchanged.
+  - Active only on SDL2 builds with *Upscale* on. Never active in headless mode or while a demo is recorded or played back (the *Independent Zoom* setting itself is left as it is). SDL1 and SDL3 builds and `Upscale=0` keep upstream behaviour. The save format, multiplayer messages and demo determinism are unchanged.
   - Setting `DEVILUTIONX_PERF_LOG=1` in the environment logs the average and 95th-percentile times of world drawing, interface drawing, colour expansion, present and the whole frame every 300 layered frames.
   - Russian strings added to `Translations/ru.po`.
   - Tests:
@@ -55,8 +55,11 @@ Every user-visible change made in this fork is listed below.
     - `test/world_picking_test.cpp`: picking at every 5K level, standing and walking.
     - `test/ui_layer_test.cpp`: the keyed interface layer and half-transparency (no blend result turns into a key colour), `RedBack`.
     - `test/layered_compose_test.cpp`: the CPU reference of the GPU composite matches the single-surface picture.
+  - Deliberate, verified deviations from the text of issue #4:
+    - Picking (§3.4) also subtracts `TILE_WIDTH / 2` in `WorldPointToTile`. With the issue's formula a tile's centre would pick a neighbouring tile.
+    - The M1-T1 round-trip bounds are swapped in the issue. The tests use `ceil(s_u / ws)` for world → UI → world and `ceil(ws / s_u)` for UI → world → UI.
+    - The M1-T2 random-pixel check shifts the diamond by the walking prediction, which the issue's oracle leaves out. The hero's ±1 UI pixel bound only holds while a world pixel is not bigger than a UI pixel.
   - Known limitations (later milestones):
     - Screenshots taken in layered mode show only the interface layer.
     - Floating info boxes are lighter over the world (50 % darkening instead of 87.5 %).
     - With an interface 640 pixels wide or less, opening a side panel still moves the mouse by 160 pixels, although the view no longer shifts. An in-game error dialog at that size shows stray pixels in palette colours 1 and 2 behind it.
-    - *Independent Zoom* forced off by a demo can be saved to `diablo.ini`, as upstream already does for *Fit to Screen*.
