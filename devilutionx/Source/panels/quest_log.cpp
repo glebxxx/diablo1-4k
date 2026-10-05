@@ -6,7 +6,7 @@
 #include "DiabloUI/ui_flags.hpp"
 #include "control/control.hpp"
 #include "effects.h"
-#include "engine/render/clx_render.hpp"
+#include "engine/render/renderer.h"
 #include "engine/render/text_render.hpp"
 #include "minitext.h"
 #include "panels/ui_panels.hpp"
@@ -53,36 +53,36 @@ int QuestLogMouseToEntry()
 	return -1;
 }
 
-void PrintQLString(const Surface &out, int x, int y, std::string_view str, bool marked, bool disabled = false)
+void PrintQLString(int x, int y, std::string_view str, bool marked, bool disabled = false)
 {
 	const int width = GetLineWidth(str);
 	x += std::max((257 - width) / 2, 0);
 	if (marked) {
-		ClxDraw(out, GetPanelPosition(UiPanels::Quest, { x - 20, y + 13 }), (*pSPentSpn2Cels)[PentSpn2Spin()]);
+		GetRenderer().DrawClx(GetPanelPosition(UiPanels::Quest, { x - 20, y + 13 }), (*pSPentSpn2Cels)[PentSpn2Spin()]);
 	}
-	DrawString(out, str, { GetPanelPosition(UiPanels::Quest, { x, y }), { 257, 0 } },
+	DrawString(str, { GetPanelPosition(UiPanels::Quest, { x, y }), { 257, 0 } },
 	    { .flags = disabled ? UiFlags::ColorWhitegold : UiFlags::ColorWhite });
 	if (marked) {
-		ClxDraw(out, GetPanelPosition(UiPanels::Quest, { x + width + 7, y + 13 }), (*pSPentSpn2Cels)[PentSpn2Spin()]);
+		GetRenderer().DrawClx(GetPanelPosition(UiPanels::Quest, { x + width + 7, y + 13 }), (*pSPentSpn2Cels)[PentSpn2Spin()]);
 	}
 }
 
 } // namespace
 
-void DrawQuestLog(const Surface &out)
+void DrawQuestLog()
 {
 	const int l = QuestLogMouseToEntry();
 	if (l >= 0) {
 		SelectedQuest = l;
 	}
 	const auto x = InnerPanel.position.x;
-	ClxDraw(out, GetPanelPosition(UiPanels::Quest, { 0, 351 }), (*pQLogCel)[0]);
+	GetRenderer().DrawClx(GetPanelPosition(UiPanels::Quest, { 0, 351 }), (*pQLogCel)[0]);
 	int y = InnerPanel.position.y + ListYOffset;
 	for (int i = 0; i < EncounteredQuestCount; i++) {
 		if (i == FirstFinishedQuest) {
 			y += FinishedQuestOffset;
 		}
-		PrintQLString(out, x, y, _(QuestsData[EncounteredQuests[i]]._qlstr), i == SelectedQuest, i >= FirstFinishedQuest);
+		PrintQLString(x, y, _(QuestsData[EncounteredQuests[i]]._qlstr), i == SelectedQuest, i >= FirstFinishedQuest);
 		y += LineSpacing;
 	}
 }

@@ -9,7 +9,7 @@ namespace devilution {
 extern DVL_API_FOR_TEST bool QuestLogIsOpen;
 extern OptionalOwnedClxSpriteList pQLogCel;
 
-void DrawQuestLog(const Surface &out);
+void DrawQuestLog();
 void StartQuestlog();
 void QuestlogUp();
 void QuestlogDown();

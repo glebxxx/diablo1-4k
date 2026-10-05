@@ -31,7 +31,7 @@ namespace devilution {
 
 namespace {
 
-VirtualGamepadRenderer Renderer(&VirtualGamepadState);
+VirtualGamepadRenderer GamepadRenderer(&VirtualGamepadState);
 
 VirtualGamepadButtonType GetAttackButtonType(bool isPressed)
 {
@@ -227,7 +227,7 @@ void RenderVirtualGamepad(SDL_Renderer *renderer)
 #endif
 	};
 
-	Renderer.Render(renderFunction);
+	GamepadRenderer.Render(renderFunction);
 }
 
 void RenderVirtualGamepad(SDL_Surface *surface)
@@ -247,7 +247,7 @@ void RenderVirtualGamepad(SDL_Surface *surface)
 			ErrSdl();
 	};
 
-	Renderer.Render(renderFunction);
+	GamepadRenderer.Render(renderFunction);
 }
 
 void VirtualGamepadRenderer::LoadArt()
@@ -546,12 +546,12 @@ void VirtualDirectionPadRenderer::UnloadArt()
 
 void InitVirtualGamepadGFX()
 {
-	Renderer.LoadArt();
+	GamepadRenderer.LoadArt();
 }
 
 void FreeVirtualGamepadGFX()
 {
-	Renderer.UnloadArt();
+	GamepadRenderer.UnloadArt();
 }
 
 void VirtualGamepadRenderer::createTextures(SDL_Renderer &renderer)
@@ -614,12 +614,12 @@ void VirtualDirectionPadRenderer::destroyTextures()
 
 void InitVirtualGamepadTextures(SDL_Renderer &renderer)
 {
-	Renderer.createTextures(renderer);
+	GamepadRenderer.createTextures(renderer);
 }
 
 void FreeVirtualGamepadTextures()
 {
-	Renderer.destroyTextures();
+	GamepadRenderer.destroyTextures();
 }
 
 } // namespace devilution
