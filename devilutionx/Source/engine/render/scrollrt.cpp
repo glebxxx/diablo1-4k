@@ -35,6 +35,7 @@
 #include "engine/render/dun_render.hpp"
 #include "engine/render/light_render.hpp"
 #include "engine/render/text_render.hpp"
+#include "engine/render/world_view.hpp"
 #include "engine/trn.hpp"
 #include "engine/world_tile.hpp"
 #include "game_mode.hpp"
@@ -1175,6 +1176,51 @@ Displacement tileShift;
 int tileColumns;
 int tileRows;
 
+/**
+ * @brief Layered counterpart of CalcViewportGeometry(): the viewport is the world surface and the hero stands at the view's anchor.
+ */
+void CalcLayeredViewportGeometry(const WorldView &view)
+{
+	const int screenWidth = view.size.width;
+	const Point playerPosition = view.anchor;
+
+	const int tilesToTop = (playerPosition.y + TILE_HEIGHT - 1) / TILE_HEIGHT;
+	const int tilesToLeft = (playerPosition.x + TILE_WIDTH - 1) / TILE_WIDTH;
+
+	// Location of the center of the tile from which to start rendering, relative to the viewport origin
+	Point startPosition = playerPosition - Displacement { tilesToLeft * TILE_WIDTH, tilesToTop * TILE_HEIGHT };
+
+	// Position of the tile from which to start rendering in tile space,
+	// relative to the tile the player character occupies
+	tileShift = { 0, 0 };
+	tileShift += Displacement(Direction::North) * tilesToTop;
+	tileShift += Displacement(Direction::West) * tilesToLeft;
+
+	// The rendering loop expects to start on a row with fewer columns
+	if (tilesToLeft * TILE_WIDTH >= playerPosition.x) {
+		startPosition += Displacement { TILE_WIDTH / 2, -TILE_HEIGHT / 2 };
+		tileShift += Displacement(Direction::NorthEast);
+	} else if (tilesToTop * TILE_HEIGHT < playerPosition.y) {
+		// There is one row above the current row that needs to be rendered,
+		// but we skip to the row above it because it has too many columns
+		startPosition += Displacement { 0, -TILE_HEIGHT };
+		tileShift += Displacement(Direction::North);
+	}
+
+	// Location of the bottom-left corner of the bounding box around the
+	// tile from which to start rendering, relative to the viewport origin
+	tileOffset = { startPosition.x - (TILE_WIDTH / 2), startPosition.y + (TILE_HEIGHT / 2) - 1 };
+
+	// Compute the number of rows to be rendered as well as
+	// the number of columns to be rendered in the first row
+	const int viewportHeight = view.size.height;
+	const Point renderStart = startPosition - Displacement { TILE_WIDTH / 2, TILE_HEIGHT / 2 };
+	tileRows = (viewportHeight - renderStart.y + TILE_HEIGHT / 2 - 1) / (TILE_HEIGHT / 2);
+	tileColumns = (screenWidth - renderStart.x + TILE_WIDTH - 1) / TILE_WIDTH;
+}
+
+} // namespace
+
 void CalcFirstTilePosition(Point &position, Displacement &offset)
 {
 	// Adjust by player offset and tile grid alignment
@@ -1186,7 +1232,7 @@ void CalcFirstTilePosition(Point &position, Displacement &offset)
 	position += tileShift;
 
 	// Skip rendering parts covered by the panels
-	if (CanPanelsCoverView() && (IsLeftPanelOpen() || IsRightPanelOpen())) {
+	if (!IsLayeredActive() && CanPanelsCoverView() && (IsLeftPanelOpen() || IsRightPanelOpen())) {
 		const int multiplier = (*GetOptions().Graphics.zoom) ? 1 : 2;
 		position += Displacement(Direction::East) * multiplier;
 		offset.deltaX += -TILE_WIDTH * multiplier / 2 / 2;
@@ -1219,6 +1265,8 @@ void CalcFirstTilePosition(Point &position, Displacement &offset)
 		}
 	}
 }
+
+namespace {
 
 /**
  * @brief Configure render and process screen rows
@@ -1604,6 +1652,12 @@ void ShiftGrid(Point *offset, int horizontal, int vertical)
 
 int RowsCoveredByPanel()
 {
+	if (IsLayeredActive()) {
+		// The hero stands centred above the main panel
+		const WorldView &view = GetWorldView();
+		return std::max(0, view.size.height - 2 * view.anchor.y) / TILE_HEIGHT;
+	}
+
 	const auto &mainPanelSize = GetMainPanel().size;
 	if (GetScreenWidth() <= mainPanelSize.width) {
 		return 0;
@@ -1619,6 +1673,15 @@ int RowsCoveredByPanel()
 
 void CalcTileOffset(int *offsetX, int *offsetY)
 {
+	if (IsLayeredActive()) {
+		const Size worldSize = GetWorldView().size;
+		const int x = worldSize.width % TILE_WIDTH;
+		const int y = worldSize.height % TILE_HEIGHT;
+		*offsetX = x != 0 ? (TILE_WIDTH - x) / 2 : 0;
+		*offsetY = y != 0 ? (TILE_HEIGHT - y) / 2 : 0;
+		return;
+	}
+
 	const uint16_t screenWidth = GetScreenWidth();
 	const uint16_t viewportHeight = GetViewportHeight();
 
@@ -1644,6 +1707,13 @@ void CalcTileOffset(int *offsetX, int *offsetY)
 
 void TilesInView(int *rcolumns, int *rrows)
 {
+	if (IsLayeredActive()) {
+		const Size worldSize = GetWorldView().size;
+		*rcolumns = (worldSize.width + TILE_WIDTH - 1) / TILE_WIDTH;
+		*rrows = (worldSize.height + TILE_HEIGHT - 1) / TILE_HEIGHT;
+		return;
+	}
+
 	const uint16_t screenWidth = GetScreenWidth();
 	const uint16_t viewportHeight = GetViewportHeight();
 
@@ -1674,6 +1744,11 @@ void TilesInView(int *rcolumns, int *rrows)
 
 void CalcViewportGeometry()
 {
+	if (IsLayeredActive()) {
+		CalcLayeredViewportGeometry(GetWorldView());
+		return;
+	}
+
 	const int zoomFactor = *GetOptions().Graphics.zoom ? 2 : 1;
 	const int screenWidth = GetScreenWidth() / zoomFactor;
 	const int screenHeight = GetScreenHeight() / zoomFactor;

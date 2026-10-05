@@ -44,6 +44,22 @@ void CheckRportal();
 void CheckTown();
 void CheckCursMove();
 
+/**
+ * @brief Mouse offset that makes picking target the next animation frame while the player is walking.
+ *
+ * Only meaningful while `myPlayer.isWalking()`.
+ */
+Displacement WalkingInputPrediction(const Player &myPlayer);
+
+/**
+ * @brief Returns the dungeon tile under a point of the world surface (layered renderer).
+ *
+ * Exact inverse of the tile layout used by GetScreenPosition() and the renderer, including the walking input prediction.
+ * @param worldPosition Position in world pixels
+ * @param flipflag Set when the point is in the left half of the tile's diamond, as ShiftToDiamondGridAlignment() sets it
+ */
+Point WorldPointToTile(Point worldPosition, bool &flipflag);
+
 void DrawSoftwareCursor(const Surface &out, Point position, int cursId);
 
 void DrawItem(const Item &item, const Surface &out, Point position, ClxSprite clx);

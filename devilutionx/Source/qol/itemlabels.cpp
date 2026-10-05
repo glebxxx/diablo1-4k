@@ -12,6 +12,7 @@
 #include "engine/point.hpp"
 #include "engine/render/clx_render.hpp"
 #include "engine/render/primitive_render.hpp"
+#include "engine/render/world_view.hpp"
 #include "gmenu.h"
 #include "inv.h"
 #include "options.h"
@@ -124,7 +125,9 @@ void AddItemToLabelQueue(int id, Point position)
 
 	position.x += *labelCenterOffsets[index];
 	position.y -= TILE_HEIGHT;
-	if (*GetOptions().Graphics.zoom) {
+	if (IsLayeredActive()) {
+		position = WorldToUi(GetWorldView(), position);
+	} else if (*GetOptions().Graphics.zoom) {
 		position *= 2;
 	}
 	position.x -= nameWidth / 2;

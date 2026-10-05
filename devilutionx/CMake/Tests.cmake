@@ -41,6 +41,7 @@ set(tests
   ui_layer_test
   layered_compose_test
   world_view_test
+  world_picking_test
   writehero_test
   vendor_test
   panel_state_test

@@ -12,6 +12,7 @@
 #endif
 
 #include "engine/render/text_render.hpp"
+#include "engine/render/world_view.hpp"
 #include "options.h"
 #include "utils/str_cat.hpp"
 
@@ -87,7 +88,10 @@ void DrawFloatingNumbers(const Surface &out, Point viewPosition, Displacement of
 		Displacement worldOffset = viewPosition - floatingNum.startPos;
 		worldOffset = worldOffset.worldToScreen() + offset + Displacement { TILE_WIDTH / 2, -TILE_HEIGHT / 2 } + floatingNum.startOffset;
 
-		if (*GetOptions().Graphics.zoom) {
+		if (IsLayeredActive()) {
+			const Point uiPosition = WorldToUi(GetWorldView(), Point { worldOffset.deltaX, worldOffset.deltaY });
+			worldOffset = { uiPosition.x, uiPosition.y };
+		} else if (*GetOptions().Graphics.zoom) {
 			worldOffset *= 2;
 		}
 
