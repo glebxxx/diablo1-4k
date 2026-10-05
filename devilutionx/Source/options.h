@@ -547,6 +547,16 @@ struct GraphicsOptions : OptionCategoryBase {
 	OptionEntryInt<int> brightness;
 	/** @brief Zoom on start. */
 	OptionEntryBoolean zoom;
+#if !defined(USE_SDL1) && !defined(USE_SDL3)
+	/** @brief Draw the game world on its own layer, zoomed independently of the UI (requires Upscale). */
+	OptionEntryBoolean independentZoom;
+	/** @brief Output pixels per game world pixel with Independent Zoom, 0 = automatic. */
+	OptionEntryInt<int> worldZoom;
+	/** @brief Smallest world height (in game pixels) offered by the world zoom levels. */
+	OptionEntryInt<int> worldZoomMinHeight;
+	/** @brief Largest world height (in game pixels) offered by the world zoom levels. */
+	OptionEntryInt<int> worldZoomMaxHeight;
+#endif
 	/** @brief Subtile lighting for smoother light gradients. */
 	OptionEntryBoolean perPixelLighting;
 	/** @brief Enable color cycling animations. */

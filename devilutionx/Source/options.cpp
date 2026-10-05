@@ -795,6 +795,12 @@ GraphicsOptions::GraphicsOptions()
           })
     , brightness("Brightness Correction", OptionEntryFlags::Invisible, "Brightness Correction", "Brightness correction level.", 0)
     , zoom("Zoom", OptionEntryFlags::None, N_("Zoom"), N_("Zoom on when enabled."), false)
+#if !defined(USE_SDL1) && !defined(USE_SDL3)
+    , independentZoom("Independent Zoom", OptionEntryFlags::None, N_("Independent Zoom"), N_("Draws the game world on its own layer, so that it can be zoomed in sharp steps independently of the interface. Use + / - or Ctrl/Cmd + mouse wheel to zoom."), true)
+    , worldZoom("World Zoom", OptionEntryFlags::None, N_("World Zoom"), N_("Screen pixels per game world pixel with Independent Zoom. 0 = automatic."), 0, { 0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 16 })
+    , worldZoomMinHeight("World Zoom Min Height", OptionEntryFlags::None, N_("World Zoom Min Height"), N_("Smallest height of the game world, in game pixels, offered by the world zoom levels."), 240, { 180, 240, 270, 360, 480, 540 })
+    , worldZoomMaxHeight("World Zoom Max Height", OptionEntryFlags::None, N_("World Zoom Max Height"), N_("Largest height of the game world, in game pixels, offered by the world zoom levels. Lower is faster."), 1620, { 720, 1080, 1440, 1620, 2160, 2880, 3240 })
+#endif
     , perPixelLighting("Per-pixel Lighting", OptionEntryFlags::None, N_("Per-pixel Lighting"), N_("Subtile lighting for smoother light gradients."), DEFAULT_PER_PIXEL_LIGHTING)
     , colorCycling("Color Cycling", OptionEntryFlags::None, N_("Color Cycling"), N_("Color cycling effect used for water, lava, and acid animation."), true)
     , alternateNestArt("Alternate nest art", OptionEntryFlags::OnlyHellfire | OptionEntryFlags::CantChangeInGame, N_("Alternate nest art"), N_("The game will use an alternative palette for Hellfire’s nest tileset."), false)
@@ -825,6 +831,12 @@ std::vector<OptionEntryBase *> GraphicsOptions::GetEntries()
 		&frameRateControl,
 		&brightness,
 		&zoom,
+#if !defined(USE_SDL1) && !defined(USE_SDL3)
+		&independentZoom,
+		&worldZoom,
+		&worldZoomMinHeight,
+		&worldZoomMaxHeight,
+#endif
 		&showFPS,
 		&perPixelLighting,
 		&colorCycling,

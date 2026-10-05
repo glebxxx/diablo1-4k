@@ -4383,6 +4383,55 @@ msgstr "Ограничение FPS"
 msgid "Zoom on when enabled."
 msgstr "Приближает, если включено."
 
+#: Source/options.cpp:799
+msgid "Independent Zoom"
+msgstr "Независимое приближение"
+
+#: Source/options.cpp:799
+msgid ""
+"Draws the game world on its own layer, so that it can be zoomed in sharp "
+"steps independently of the interface. Use + / - or Ctrl/Cmd + mouse wheel to "
+"zoom."
+msgstr ""
+"Рисует игровой мир отдельным слоем, чтобы его можно было приближать чёткими "
+"шагами независимо от интерфейса. Приближение: + / - или Ctrl/Cmd + колесо "
+"мыши."
+
+#: Source/options.cpp:800
+msgid "World Zoom"
+msgstr "Приближение мира"
+
+#: Source/options.cpp:800
+msgid ""
+"Screen pixels per game world pixel with Independent Zoom. 0 = automatic."
+msgstr ""
+"Пикселей экрана на пиксель игрового мира при независимом приближении. 0 = "
+"автоматически."
+
+#: Source/options.cpp:801
+msgid "World Zoom Min Height"
+msgstr "Мин. высота мира"
+
+#: Source/options.cpp:801
+msgid ""
+"Smallest height of the game world, in game pixels, offered by the world zoom "
+"levels."
+msgstr ""
+"Наименьшая высота игрового мира в пикселях игры среди уровней приближения "
+"мира."
+
+#: Source/options.cpp:802
+msgid "World Zoom Max Height"
+msgstr "Макс. высота мира"
+
+#: Source/options.cpp:802
+msgid ""
+"Largest height of the game world, in game pixels, offered by the world zoom "
+"levels. Lower is faster."
+msgstr ""
+"Наибольшая высота игрового мира в пикселях игры среди уровней приближения "
+"мира. Чем меньше, тем быстрее."
+
 #: Source/options.cpp:791
 msgid "Per-pixel Lighting"
 msgstr "Попиксельное освещение"
