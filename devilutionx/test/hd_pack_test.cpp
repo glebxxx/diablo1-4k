@@ -16,6 +16,7 @@
 #include "engine/render/gl1/gl1_hd_pack.hpp"
 #include "utils/png.h"
 #include "utils/sdl_compat.h"
+#include "utils/sdl_wrap.h"
 
 namespace devilution {
 namespace {
@@ -407,11 +408,9 @@ TEST_F(HdPackTest, DumpRoundTrip)
 	    "key\tkind\twidth\theight\ttile_type\ttrn\tlevel_type\n" + hex + "\tsprite\t3\t2\t-1\tnone\t1\n");
 
 	// Read the dumped 1x frame back, upscale it 4x (nearest neighbour) and pack it.
-	SDL_Surface *loaded = LoadPNG(png.string().c_str());
+	const SDLSurfaceUniquePtr loaded { LoadPNG(png.string().c_str()) };
 	ASSERT_NE(loaded, nullptr);
-	SDL_Surface *rgba = SDL_ConvertSurfaceFormat(loaded, SDL_PIXELFORMAT_RGBA32, 0);
-	SDL_FreeSurface(loaded);
-	ASSERT_NE(rgba, nullptr);
+	const SDLSurfaceUniquePtr rgba = SDLWrap::ConvertSurfaceFormat(loaded.get(), SDL_PIXELFORMAT_RGBA32, 0);
 	ASSERT_EQ(rgba->w, 3);
 	ASSERT_EQ(rgba->h, 2);
 	HdImage upscaled;
@@ -422,7 +421,6 @@ TEST_F(HdPackTest, DumpRoundTrip)
 		for (int x = 0; x < 3 * S; ++x)
 			upscaled.rgba.insert(upscaled.rgba.end(), row + (x / S) * 4, row + (x / S) * 4 + 4);
 	}
-	SDL_FreeSurface(rgba);
 	EXPECT_EQ(upscaled.rgba[(static_cast<size_t>(0) * 3 * S + S) * 4 + 0], palette[10].r);
 	EXPECT_EQ(upscaled.rgba[3], 0); // transparent 1x pixel stays transparent
 

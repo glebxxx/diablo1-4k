@@ -111,9 +111,9 @@ TEST(HdKeyTest, HexRoundTrip)
 TEST(HdKeyTest, DecodesClxSprite)
 {
 	const HdIndexedFrame image = MakeFrame(5, 3, {
-	                                                 T, 10, 10, 10, T,  // top row
-	                                                 1, 2, 3, 4, 5,     //
-	                                                 T, T, 250, T, T,   // bottom row
+	                                                 T, 10, 10, 10, T, // top row
+	                                                 1, 2, 3, 4, 5,    //
+	                                                 T, T, 250, T, T,  // bottom row
 	                                             });
 	const std::vector<uint8_t> clxData = EncodeClx(image);
 	const ClxSprite clx { clxData.data(), static_cast<uint32_t>(clxData.size()) };
@@ -151,8 +151,8 @@ TEST(HdKeyTest, DecodesSquareTile)
 	const HdIndexedFrame tile = DecodeDunTileToIndexed(data.data(), TileType::Square, 32);
 	ASSERT_EQ(tile.width, 32);
 	ASSERT_EQ(tile.height, 32);
-	EXPECT_EQ(tile.pixels[0], 31);             // top-left: last stored row
-	EXPECT_EQ(tile.pixels[31 * 32 + 5], 0);    // bottom row: first stored row
+	EXPECT_EQ(tile.pixels[0], 31);          // top-left: last stored row
+	EXPECT_EQ(tile.pixels[31 * 32 + 5], 0); // bottom row: first stored row
 }
 
 TEST(HdKeyTest, DecodesLeftTriangleShape)
@@ -217,7 +217,7 @@ TEST(HdKeyTest, AnimatedIndices)
 	const HdIndexedFrame frame = MakeFrame(3, 1, { T, 40, 12 });
 	EXPECT_TRUE(UsesAnimatedIndices(frame, { 1, 31 }));
 	EXPECT_FALSE(UsesAnimatedIndices(frame, { 1, 8 }));
-	EXPECT_FALSE(UsesAnimatedIndices(frame, {})); // town: nothing cycles
+	EXPECT_FALSE(UsesAnimatedIndices(frame, {}));                          // town: nothing cycles
 	EXPECT_FALSE(UsesAnimatedIndices(MakeFrame(1, 1, { T }), { 0, 255 })); // transparent never counts
 }
 

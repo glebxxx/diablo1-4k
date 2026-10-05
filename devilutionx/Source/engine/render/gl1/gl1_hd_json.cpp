@@ -149,10 +149,14 @@ private:
 		for (int i = 0; i < 4; ++i) {
 			const char c = text_[pos_++];
 			value <<= 4;
-			if (c >= '0' && c <= '9') value |= c - '0';
-			else if (c >= 'a' && c <= 'f') value |= c - 'a' + 10;
-			else if (c >= 'A' && c <= 'F') value |= c - 'A' + 10;
-			else return std::nullopt;
+			if (c >= '0' && c <= '9')
+				value |= c - '0';
+			else if (c >= 'a' && c <= 'f')
+				value |= c - 'a' + 10;
+			else if (c >= 'A' && c <= 'F')
+				value |= c - 'A' + 10;
+			else
+				return std::nullopt;
 		}
 		return value;
 	}

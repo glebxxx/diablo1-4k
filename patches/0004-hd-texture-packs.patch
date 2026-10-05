@@ -315,10 +315,10 @@ index 0000000..4ba9a74
 +} // namespace devilution
 diff --git a/Source/engine/render/gl1/gl1_hd_json.cpp b/Source/engine/render/gl1/gl1_hd_json.cpp
 new file mode 100644
-index 0000000..f3c9dcc
+index 0000000..b8d758d
 --- /dev/null
 +++ b/Source/engine/render/gl1/gl1_hd_json.cpp
-@@ -0,0 +1,342 @@
+@@ -0,0 +1,346 @@
 +#include "engine/render/gl1/gl1_hd_json.hpp"
 +
 +#include <cmath>
@@ -470,10 +470,14 @@ index 0000000..f3c9dcc
 +		for (int i = 0; i < 4; ++i) {
 +			const char c = text_[pos_++];
 +			value <<= 4;
-+			if (c >= '0' && c <= '9') value |= c - '0';
-+			else if (c >= 'a' && c <= 'f') value |= c - 'a' + 10;
-+			else if (c >= 'A' && c <= 'F') value |= c - 'A' + 10;
-+			else return std::nullopt;
++			if (c >= '0' && c <= '9')
++				value |= c - '0';
++			else if (c >= 'a' && c <= 'f')
++				value |= c - 'a' + 10;
++			else if (c >= 'A' && c <= 'F')
++				value |= c - 'A' + 10;
++			else
++				return std::nullopt;
 +		}
 +		return value;
 +	}
@@ -2125,7 +2129,7 @@ index 0000000..fa6ffd2
 +]
 diff --git a/test/hd_key_test.cpp b/test/hd_key_test.cpp
 new file mode 100644
-index 0000000..dbba79e
+index 0000000..6f87b9a
 --- /dev/null
 +++ b/test/hd_key_test.cpp
 @@ -0,0 +1,225 @@
@@ -2242,9 +2246,9 @@ index 0000000..dbba79e
 +TEST(HdKeyTest, DecodesClxSprite)
 +{
 +	const HdIndexedFrame image = MakeFrame(5, 3, {
-+	                                                 T, 10, 10, 10, T,  // top row
-+	                                                 1, 2, 3, 4, 5,     //
-+	                                                 T, T, 250, T, T,   // bottom row
++	                                                 T, 10, 10, 10, T, // top row
++	                                                 1, 2, 3, 4, 5,    //
++	                                                 T, T, 250, T, T,  // bottom row
 +	                                             });
 +	const std::vector<uint8_t> clxData = EncodeClx(image);
 +	const ClxSprite clx { clxData.data(), static_cast<uint32_t>(clxData.size()) };
@@ -2282,8 +2286,8 @@ index 0000000..dbba79e
 +	const HdIndexedFrame tile = DecodeDunTileToIndexed(data.data(), TileType::Square, 32);
 +	ASSERT_EQ(tile.width, 32);
 +	ASSERT_EQ(tile.height, 32);
-+	EXPECT_EQ(tile.pixels[0], 31);             // top-left: last stored row
-+	EXPECT_EQ(tile.pixels[31 * 32 + 5], 0);    // bottom row: first stored row
++	EXPECT_EQ(tile.pixels[0], 31);          // top-left: last stored row
++	EXPECT_EQ(tile.pixels[31 * 32 + 5], 0); // bottom row: first stored row
 +}
 +
 +TEST(HdKeyTest, DecodesLeftTriangleShape)
@@ -2348,7 +2352,7 @@ index 0000000..dbba79e
 +	const HdIndexedFrame frame = MakeFrame(3, 1, { T, 40, 12 });
 +	EXPECT_TRUE(UsesAnimatedIndices(frame, { 1, 31 }));
 +	EXPECT_FALSE(UsesAnimatedIndices(frame, { 1, 8 }));
-+	EXPECT_FALSE(UsesAnimatedIndices(frame, {})); // town: nothing cycles
++	EXPECT_FALSE(UsesAnimatedIndices(frame, {}));                          // town: nothing cycles
 +	EXPECT_FALSE(UsesAnimatedIndices(MakeFrame(1, 1, { T }), { 0, 255 })); // transparent never counts
 +}
 +
@@ -2356,10 +2360,10 @@ index 0000000..dbba79e
 +} // namespace devilution
 diff --git a/test/hd_pack_test.cpp b/test/hd_pack_test.cpp
 new file mode 100644
-index 0000000..de6cfe3
+index 0000000..4b6a740
 --- /dev/null
 +++ b/test/hd_pack_test.cpp
-@@ -0,0 +1,444 @@
+@@ -0,0 +1,442 @@
 +#include <cstdint>
 +#include <cstdio>
 +#include <filesystem>
@@ -2378,6 +2382,7 @@ index 0000000..de6cfe3
 +#include "engine/render/gl1/gl1_hd_pack.hpp"
 +#include "utils/png.h"
 +#include "utils/sdl_compat.h"
++#include "utils/sdl_wrap.h"
 +
 +namespace devilution {
 +namespace {
@@ -2769,11 +2774,9 @@ index 0000000..de6cfe3
 +	    "key\tkind\twidth\theight\ttile_type\ttrn\tlevel_type\n" + hex + "\tsprite\t3\t2\t-1\tnone\t1\n");
 +
 +	// Read the dumped 1x frame back, upscale it 4x (nearest neighbour) and pack it.
-+	SDL_Surface *loaded = LoadPNG(png.string().c_str());
++	const SDLSurfaceUniquePtr loaded { LoadPNG(png.string().c_str()) };
 +	ASSERT_NE(loaded, nullptr);
-+	SDL_Surface *rgba = SDL_ConvertSurfaceFormat(loaded, SDL_PIXELFORMAT_RGBA32, 0);
-+	SDL_FreeSurface(loaded);
-+	ASSERT_NE(rgba, nullptr);
++	const SDLSurfaceUniquePtr rgba = SDLWrap::ConvertSurfaceFormat(loaded.get(), SDL_PIXELFORMAT_RGBA32, 0);
 +	ASSERT_EQ(rgba->w, 3);
 +	ASSERT_EQ(rgba->h, 2);
 +	HdImage upscaled;
@@ -2784,7 +2787,6 @@ index 0000000..de6cfe3
 +		for (int x = 0; x < 3 * S; ++x)
 +			upscaled.rgba.insert(upscaled.rgba.end(), row + (x / S) * 4, row + (x / S) * 4 + 4);
 +	}
-+	SDL_FreeSurface(rgba);
 +	EXPECT_EQ(upscaled.rgba[(static_cast<size_t>(0) * 3 * S + S) * 4 + 0], palette[10].r);
 +	EXPECT_EQ(upscaled.rgba[3], 0); // transparent 1x pixel stays transparent
 +
